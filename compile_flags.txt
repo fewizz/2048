@@ -1,0 +1,14 @@
+-std=c++2b
+-nostdinc++
+
+-I../core/include
+-I../math/include
+-I../windows-wrapper/include
+-I../posix-wrapper/include
+-I../vulkan-wrapper/include
+-I../glfw-wrapper/include
+-I../print/include
+
+-Iinclude
+-Wall
+-Wextra
