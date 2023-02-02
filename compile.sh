@@ -2,15 +2,21 @@ root=`dirname $(realpath ${BASH_SOURCE[0]})`
 
 mkdir -p ${root}/build
 
-glslangValidator \
-	-e main \
-	-o ${root}/build/tile.vert.spv \
-	-V ${root}/src/tile.vert
+compile_shader() {
+	if ! glslangValidator \
+		-e main \
+		-o ${root}/build/$1.spv \
+		-V ${root}/src/$1
+	then
+		exit 1
+	fi
+}
 
-glslangValidator \
-	-e main \
-	-o ${root}/build/tile.frag.spv \
-	-V ${root}/src/tile.frag
+compile_shader tile.vert
+compile_shader tile.frag
+
+compile_shader digits_and_letters.vert
+compile_shader digits_and_letters.frag
 
 cp ${root}/src/digits_and_letters.png ${root}/build/
 

@@ -3,6 +3,8 @@
 #include "./glfw.hpp"
 #include "./read_file.hpp"
 #include "./read_png.hpp"
+#include "./read_shader_module.hpp"
+#include "./table.hpp"
 
 #include <vk.hpp>
 
@@ -12,83 +14,22 @@
 
 #include <posix/io.hpp>
 #include <posix/memory.hpp>
+#include <posix/time.hpp>
 
 #include <on_scope_exit.hpp>
 #include <array.hpp>
 #include <ranges.hpp>
 #include <number.hpp>
+#include <numbers.hpp>
 #include <list.hpp>
 
-static constexpr math::vector<uint32, 2> table_size{ uint32(4), uint32(4) };
-
-static struct push_constant_t {
-	uint32 size[2];
-	uint32 table_size[2] = { ::table_size[0], ::table_size[1] };
-	array<array<uint32, 3>, 3> table{};
-} push_constant;
-
-extern "C" long rand();
-
-enum class direction {
-	up, down, left, right
-};
-
-/*
- default: (up)
- [0][0] [0][1] [0][2]
- [1][0] [1][1] [1][2]
- [2][0] [2][1] [2][2]
-*/
-template<direction Dir>
-constexpr auto rotated_view(auto& table) {
-	if constexpr(Dir == direction::up) {
-		return table.transform_view([](auto& e) -> auto& { return e; });
-	}
-	else if constexpr(Dir == direction::down) {
-		return table.reverse_view();
-	}
-	else {
-		return table.transform_view([&](array<uint32, 3>& y_value) {
-			nuint y_index = &y_value - table.iterator();
-			return y_value.transform_view(
-				[&, y_index = y_index](uint32& x_value) -> uint32& {
-					nuint x_index = &x_value - y_value.iterator();
-					if constexpr(Dir == direction::left) {
-						return table[x_index][y_index];
-					}
-					else {
-						return table[x_index].reverse_view()[y_index];
-					}
-				}
-			);
-		});
-	}
-}
-
-void add_random_tile() {
-	nuint tile_values_raw_size
-		= push_constant.table.size() * push_constant.table[0].size();
-	storage<uint32*> tile_values_raw[tile_values_raw_size];
-
-	list tile_values{ span{ tile_values_raw, tile_values_raw_size } };
-
-	for(nuint y = 0; y < push_constant.table.size(); ++y) {
-		for(nuint x = 0; x < push_constant.table[y].size(); ++x) {
-			uint32& value = push_constant.table[y][x];
-			if(value == 0) {
-				tile_values.emplace_back(&value);
-			}
-		}
-	}
-
-	nuint rand_index = rand() % tile_values.size();
-	uint32 rand_value = (rand() % 2 + 1) * 2;
-	*tile_values[rand_index] = rand_value;
-}
-
 int main() {
-	add_random_tile();
-	add_random_tile();
+	posix::rand_seed(
+		posix::monolitic_clock.secods_and_nanoseconds().seconds
+	);
+
+	table.try_put_random_value();
+	table.try_put_random_value();
 
 	if(!glfw_instance.is_vulkan_supported()) {
 		print::err("vulkan isn't supported\n");
@@ -102,42 +43,21 @@ int main() {
 		) {
 			if(action != glfw::key::action::press) return;
 
-			auto move = []<direction Dir>() {
-				auto table = rotated_view<Dir>(push_constant.table);
-				bool changed = false;
-
-				for(nuint y = 1; y < table.size(); ++y) {
-					for(nuint x = 0; x < table[y].size(); ++x) {
-						nuint empty_y = -1;
-						for(nuint offset = 1; offset <= y; ++offset) {
-							if(table[y - offset][x] == 0) {
-								empty_y = y - offset;
-							}
-							else if(table[y - offset][x] == table[y][x]) {
-								table[y - offset][x] *= 2;
-								table[y][x] = 0;
-								changed = true;
-								break;
-							}
-						}
-						if(empty_y != nuint(-1)) {
-							table[empty_y][x] = table[y][x];
-							table[y][x] = 0;
-							changed = true;
-						}
-					}
-				}
-
-				if(changed) {
-					add_random_tile();
-				}
-			};
+			bool moved = false;
 
 			switch (key) {
-				case glfw::keys::w: move.operator ()<direction::up>();    break;
-				case glfw::keys::s: move.operator ()<direction::down>();  break;
-				case glfw::keys::a: move.operator ()<direction::left>();  break;
-				case glfw::keys::d: move.operator ()<direction::right>(); break;
+				case glfw::keys::w:
+					moved = table.try_move<direction::up>();    break;
+				case glfw::keys::s:
+					moved = table.try_move<direction::down>();  break;
+				case glfw::keys::a:
+					moved = table.try_move<direction::left>();  break;
+				case glfw::keys::d:
+					moved = table.try_move<direction::right>(); break;
+			}
+
+			if(moved) {
+				table.try_put_random_value();
 			}
 		}
 	);
@@ -361,11 +281,17 @@ int main() {
 	handle<vk::descriptor_pool> descriptor_pool
 		= vk::create_descriptor_pool(
 			instance, device,
-			vk::max_sets{ 1 },
-			array { vk::descriptor_pool_size {
-				vk::descriptor_type::combined_image_sampler,
-				vk::descriptor_count{ 1 }
-			}}
+			vk::max_sets{ 2 },
+			array {
+				vk::descriptor_pool_size {
+					vk::descriptor_type::uniform_buffer,
+					vk::descriptor_count{ 2 }
+				},
+				vk::descriptor_pool_size {
+					vk::descriptor_type::combined_image_sampler,
+					vk::descriptor_count{ 1 }
+				}
+			}
 		);
 	on_scope_exit destroy_descriptor_pool = [&] {
 		vk::destroy_descriptor_pool(instance, device, descriptor_pool);
@@ -373,30 +299,68 @@ int main() {
 
 	print::out("descriptor pool created\n");
 
-	handle<vk::descriptor_set_layout> descriptor_set_layout
+	handle<vk::descriptor_set_layout> tile_descriptor_set_layout
 		= vk::create_descriptor_set_layout(
 			instance, device,
 			array { vk::descriptor_set_layout_binding {
 				vk::descriptor_binding{ 0 },
-				vk::descriptor_type::combined_image_sampler,
+				vk::descriptor_type::uniform_buffer,
 				vk::descriptor_count{ 1 },
-				vk::shader_stages{ vk::shader_stage::fragment }
+				vk::shader_stages {
+					vk::shader_stage::vertex
+				}
 			}}
 		);
-	on_scope_exit destroy_descriptor_set_layout = [&] {
+
+	on_scope_exit destroy_tile_descriptor_set_layout = [&] {
 		vk::destroy_descriptor_set_layout(
-			instance, device, descriptor_set_layout
+			instance, device, tile_descriptor_set_layout
 		);
 	};
 
-	print::out("descriptor set layout created\n");
-
-	handle<vk::descriptor_set> descriptor_set
-		= vk::allocate_descriptor_set(
-			instance, device, descriptor_pool, descriptor_set_layout
+	handle<vk::descriptor_set_layout> digits_and_letters_descriptor_set_layout
+		= vk::create_descriptor_set_layout(
+			instance, device,
+			array {
+				vk::descriptor_set_layout_binding {
+					vk::descriptor_binding{ 0 },
+					vk::descriptor_type::uniform_buffer,
+					vk::descriptor_count{ 1 },
+					vk::shader_stages {
+						vk::shader_stage::vertex
+					}
+				},
+				vk::descriptor_set_layout_binding {
+					vk::descriptor_binding{ 1 },
+					vk::descriptor_type::combined_image_sampler,
+					vk::descriptor_count{ 1 },
+					vk::shader_stages {
+						vk::shader_stage::fragment
+					}
+				}
+			}
 		);
 
-	print::out("descriptor set allocated\n");
+	on_scope_exit destroy_digits_and_letters_descriptor_set_layout = [&] {
+		vk::destroy_descriptor_set_layout(
+			instance, device, digits_and_letters_descriptor_set_layout
+		);
+	};
+
+	print::out("descriptor set layouts created\n");
+
+	handle<vk::descriptor_set> tile_descriptor_set
+		= vk::allocate_descriptor_set(
+			instance, device, descriptor_pool, tile_descriptor_set_layout
+		);
+
+	handle<vk::descriptor_set> digits_and_letters_descriptor_set
+		= vk::allocate_descriptor_set(
+			instance, device, descriptor_pool,
+			digits_and_letters_descriptor_set_layout
+		);
+
+	print::out("descriptor sets allocated\n");
 
 	array attachment_references {
 		vk::color_attachment_reference {
@@ -405,81 +369,146 @@ int main() {
 		}
 	};
 
-	handle<vk::render_pass> render_pass = vk::create_render_pass(
+	handle<vk::render_pass> tile_render_pass = vk::create_render_pass(
 		instance, device,
 		array { vk::attachment_description {
 			surface_format.format,
-			vk::load_op{ vk::attachment_load_op::clear },
-			vk::store_op{ vk::attachment_store_op::store },
-			vk::final_layout{ vk::image_layout::present_src }
+			vk::load_op { vk::attachment_load_op::clear },
+			vk::store_op { vk::attachment_store_op::store },
+			vk::final_layout { vk::image_layout::color_attachment_optimal }
 		}},
 		array {
 			vk::subpass_description{ attachment_references }
 		},
 		array {
 			vk::subpass_dependency {
-				vk::src_subpass{ vk::subpass_external },
-				vk::dst_subpass{ 0 },
-				vk::src_stages{ vk::pipeline_stage::color_attachment_output },
-				vk::dst_stages{ vk::pipeline_stage::color_attachment_output }
+				vk::src_subpass { vk::subpass_external },
+				vk::dst_subpass { 0 },
+				vk::src_stages { vk::pipeline_stage::color_attachment_output },
+				vk::dst_stages { vk::pipeline_stage::color_attachment_output }
 			}
 		}
 	);
-	on_scope_exit destroy_render_pass = [&] {
-		vk::destroy_render_pass(instance, device, render_pass);
+
+	on_scope_exit destroy_tile_render_pass = [&] {
+		vk::destroy_render_pass(instance, device, tile_render_pass);
 	};
 
-	print::out("render pass created\n");
-
-	posix::memory_for_range_of<uint8> tile_vert_data
-		= read_file(c_string{ "tile.vert.spv" });
-
-	handle<vk::shader_module> tile_vert_shader_module =
-		vk::create_shader_module(
+	handle<vk::render_pass> digits_and_letters_render_pass
+		= vk::create_render_pass(
 			instance, device,
-			vk::code{ (uint32*) tile_vert_data.iterator() },
-			vk::code_size{ tile_vert_data.size() }
+			array { vk::attachment_description {
+				surface_format.format,
+				vk::load_op { vk::attachment_load_op::load },
+				vk::store_op { vk::attachment_store_op::store },
+				vk::initial_layout {
+					vk::image_layout::color_attachment_optimal
+				},
+				vk::final_layout { vk::image_layout::present_src }
+			}},
+			array {
+				vk::subpass_description{ attachment_references }
+			},
+			array {
+				vk::subpass_dependency {
+					vk::src_subpass { vk::subpass_external },
+					vk::dst_subpass { 0 },
+					vk::src_stages {
+						vk::pipeline_stage::color_attachment_output
+					},
+					vk::dst_stages {
+						vk::pipeline_stage::color_attachment_output
+					}
+				}
+			}
 		);
+	on_scope_exit destroy_digits_and_letters_render_pass = [&] {
+		vk::destroy_render_pass(
+			instance, device, digits_and_letters_render_pass
+		);
+	};
+
+	print::out("render passes created\n");
+
+	handle<vk::shader_module> tile_vert_shader_module
+		= read_shader_module(instance, device, c_string{ "tile.vert.spv" });
 	on_scope_exit destroy_tile_vert_shader_module = [&] {
 		vk::destroy_shader_module(instance, device, tile_vert_shader_module);
 	};
 
 	print::out("tile.vert shader module created\n");
 
-	posix::memory_for_range_of<uint8> tile_frag_data
-		= read_file(c_string{ "tile.frag.spv" });
-
-	handle<vk::shader_module> tile_frag_shader_module =
-		vk::create_shader_module(
-			instance, device,
-			vk::code{ (uint32*) tile_frag_data.iterator() },
-			vk::code_size{ tile_frag_data.size() }
-		);
+	handle<vk::shader_module> tile_frag_shader_module
+		= read_shader_module(instance, device, c_string{ "tile.frag.spv" });
 	on_scope_exit destroy_tile_frag_shader_module = [&] {
 		vk::destroy_shader_module(instance, device, tile_frag_shader_module);
 	};
 
 	print::out("tile.frag shader module created\n");
 
-	handle<vk::pipeline_layout> pipeline_layout = vk::create_pipeline_layout(
-		instance, device,
-		array { descriptor_set_layout },
-		array { vk::push_constant_range {
-			.stages {
-				vk::shader_stage::vertex,
-				vk::shader_stage::fragment
-			},
-			.offset = 0,
-			.size = sizeof(push_constant_t)
-		}}
-	);
-	on_scope_exit destroy_pipeline_layout = [&] {
-		vk::destroy_pipeline_layout(instance, device, pipeline_layout);
+	handle<vk::shader_module> digits_and_letters_vert_shader_module
+		= read_shader_module(
+			instance, device, c_string{ "digits_and_letters.vert.spv" }
+		);
+	on_scope_exit destroy_digits_and_letters_vert_shader_module = [&] {
+		vk::destroy_shader_module(
+			instance, device, digits_and_letters_vert_shader_module
+		);
+	};
+
+	print::out("digits_and_letters.vert shader module created\n");
+
+	handle<vk::shader_module> digits_and_letters_frag_shader_module
+		= read_shader_module(
+			instance, device, c_string{ "digits_and_letters.frag.spv" }
+		);
+	on_scope_exit destroy_digits_and_letters_frag_shader_module = [&] {
+		vk::destroy_shader_module(
+			instance, device, digits_and_letters_frag_shader_module
+		);
+	};
+
+	print::out("digits_and_letters.frag shader module created\n");
+
+	handle<vk::pipeline_layout> tiles_pipeline_layout
+		= vk::create_pipeline_layout(
+			instance, device,
+			array { tile_descriptor_set_layout },
+			array { vk::push_constant_range {
+				.stages {
+					vk::shader_stage::vertex
+				},
+				.offset = 0,
+				.size = 2 * sizeof(uint32)
+			}}
+		);
+
+	on_scope_exit destroy_tile_pipeline_layout = [&] {
+		vk::destroy_pipeline_layout(instance, device, tiles_pipeline_layout);
+	};
+
+	handle<vk::pipeline_layout> digits_and_letters_pipeline_layout
+		= vk::create_pipeline_layout(
+			instance, device,
+			array { digits_and_letters_descriptor_set_layout },
+			array { vk::push_constant_range {
+				.stages {
+					vk::shader_stage::vertex
+				},
+				.offset = 0,
+				.size = 2 * sizeof(uint32)
+			}}
+		);
+
+	on_scope_exit destroy_digits_and_letters_pipeline_layout = [&] {
+		vk::destroy_pipeline_layout(
+			instance, device, digits_and_letters_pipeline_layout
+		);
 	};
 
 	print::out("pipeline layout created\n");
 
-	vk::pipeline_color_blend_attachment_state pcbas {
+	vk::pipeline_color_blend_attachment_state tile_pcbas {
 		vk::enable_blend{ false }
 	};
 
@@ -487,9 +516,9 @@ int main() {
 		vk::dynamic_state::viewport, vk::dynamic_state::scissor
 	};
 
-	handle<vk::pipeline> pipeline = vk::create_graphics_pipelines(
+	handle<vk::pipeline> tile_pipeline = vk::create_graphics_pipelines(
 		instance, device,
-		pipeline_layout, render_pass, vk::subpass{ 0 },
+		tiles_pipeline_layout, tile_render_pass, vk::subpass{ 0 },
 		vk::pipeline_input_assembly_state_create_info {
 			.topology = vk::primitive_topology::triangle_list
 		},
@@ -514,18 +543,68 @@ int main() {
 		},
 		vk::pipeline_color_blend_state_create_info {
 			vk::logic_op::copy,
-			span{ &pcbas }
+			span{ &tile_pcbas }
 		},
 		vk::pipeline_viewport_state_create_info {
-			vk::viewport_count{ 1 }, vk::scissor_count{ 1 }
+			vk::viewport_count { 1 }, vk::scissor_count{ 1 }
 		},
 		vk::pipeline_dynamic_state_create_info { dynamic_states }
 	);
-	on_scope_exit destroy_pipeline = [&] {
-		vk::destroy_pipeline(instance, device, pipeline);
+	on_scope_exit destroy_tile_pipeline = [&] {
+		vk::destroy_pipeline(instance, device, tile_pipeline);
 	};
 
-	print::out("pipeline created\n");
+	vk::pipeline_color_blend_attachment_state digits_and_letters_pcbas {
+		vk::enable_blend { true },
+		vk::src_color_blend_factor { vk::blend_factor::src_alpha },
+		vk::dst_color_blend_factor { vk::blend_factor::one_minus_src_alpha },
+		vk::color_blend_op { vk::blend_op::add },
+		vk::src_alpha_blend_factor { vk::blend_factor::one },
+		vk::dst_alpha_blend_factor { vk::blend_factor::zero },
+		vk::alpha_blend_op { vk::blend_op::add },
+	};
+
+	handle<vk::pipeline> digits_and_letters_pipeline
+	= vk::create_graphics_pipelines(
+		instance, device,
+		digits_and_letters_pipeline_layout, digits_and_letters_render_pass,
+		vk::subpass{ 0 },
+		vk::pipeline_input_assembly_state_create_info {
+			.topology = vk::primitive_topology::triangle_list
+		},
+		array {
+			vk::pipeline_shader_stage_create_info {
+				vk::shader_stage::vertex,
+				digits_and_letters_vert_shader_module,
+				vk::entrypoint_name{ "main" }
+			},
+			vk::pipeline_shader_stage_create_info {
+				vk::shader_stage::fragment,
+				digits_and_letters_frag_shader_module,
+				vk::entrypoint_name{ "main" }
+			}
+		},
+		vk::pipeline_multisample_state_create_info{},
+		vk::pipeline_vertex_input_state_create_info{},
+		vk::pipeline_rasterization_state_create_info {
+			vk::polygon_mode::fill,
+			vk::cull_mode::back,
+			vk::front_face::counter_clockwise
+		},
+		vk::pipeline_color_blend_state_create_info {
+			vk::logic_op::copy,
+			span{ &digits_and_letters_pcbas }
+		},
+		vk::pipeline_viewport_state_create_info {
+			vk::viewport_count { 1 }, vk::scissor_count{ 1 }
+		},
+		vk::pipeline_dynamic_state_create_info { dynamic_states }
+	);
+	on_scope_exit destroy_digits_and_letters_pipeline = [&] {
+		vk::destroy_pipeline(instance, device, digits_and_letters_pipeline);
+	};
+
+	print::out("pipelines created\n");
 
 	handle<vk::command_pool> command_pool = vk::create_command_pool(
 		instance, device,
@@ -577,21 +656,108 @@ int main() {
 		vk::queue_submit(instance, device, queue, change_layout_command_buffer);
 	}
 
+	handle<vk::buffer> tile_uniform_buffer = vk::create_buffer(
+		instance, device, vk::buffer_size { 65536 },
+		vk::buffer_usages {
+			vk::buffer_usage::transfer_src,
+			vk::buffer_usage::transfer_dst,
+			vk::buffer_usage::uniform_buffer
+		}
+	);
+	on_scope_exit destroy_tile_uniform_buffer = [&] {
+		vk::destroy_buffer(instance, device, tile_uniform_buffer);
+	};
+
+	handle<vk::device_memory> tile_uniform_buffer_memory = vk::allocate_memory(
+		instance, device, vk::memory_size { 65536 },
+		vk::find_first_memory_type_index(
+			instance, physical_device, vk::memory_properties {
+				vk::memory_property::device_local
+			}
+		)
+	);
+	on_scope_exit free_tile_uniform_buffer_memory = [&] {
+		vk::free_memory(instance, device, tile_uniform_buffer_memory);
+	};
+
+	handle<vk::buffer> digits_and_letters_uniform_buffer = vk::create_buffer(
+		instance, device, vk::buffer_size { 65536 },
+		vk::buffer_usages {
+			vk::buffer_usage::transfer_src,
+			vk::buffer_usage::transfer_dst,
+			vk::buffer_usage::uniform_buffer
+		}
+	);
+	on_scope_exit destroy_digits_and_letters__uniform_buffer = [&] {
+		vk::destroy_buffer(instance, device, digits_and_letters_uniform_buffer);
+	};
+
+	handle<vk::device_memory> digits_and_letters_uniform_buffer_memory
+		= vk::allocate_memory(
+			instance, device, vk::memory_size { 65536 },
+			vk::find_first_memory_type_index(
+				instance, physical_device, vk::memory_properties {
+					vk::memory_property::device_local
+				}
+			)
+		);
+	on_scope_exit free_digits_and_letters_uniform_buffer_memory = [&] {
+		vk::free_memory(
+			instance, device, digits_and_letters_uniform_buffer_memory
+		);
+	};
+
+	vk::bind_buffer_memory(
+		instance, device,
+		tile_uniform_buffer,
+		tile_uniform_buffer_memory
+	);
+
+	vk::bind_buffer_memory(
+		instance, device,
+		digits_and_letters_uniform_buffer,
+		digits_and_letters_uniform_buffer_memory
+	);
+
 	vk::update_descriptor_set(
 		instance, device,
 		vk::write_descriptor_set {
-			descriptor_set,
+			tile_descriptor_set,
 			vk::dst_binding{ 0 },
-			vk::descriptor_type::combined_image_sampler,
-			array{ vk::descriptor_image_info {
-				digits_and_letters_image_view,
-				digits_and_letters_sampler,
-				vk::image_layout::shader_read_only_optimal
+			vk::descriptor_type::uniform_buffer,
+			array{ vk::descriptor_buffer_info {
+				tile_uniform_buffer,
+				vk::memory_size { 65536 }
 			}}
 		}
 	);
 
-	print::out("descriptor set updated\n");
+	vk::update_descriptor_sets(
+		instance, device,
+		array {
+			vk::write_descriptor_set {
+				digits_and_letters_descriptor_set,
+				vk::dst_binding{ 0 },
+				vk::descriptor_type::uniform_buffer,
+				array{ vk::descriptor_buffer_info {
+					digits_and_letters_uniform_buffer,
+					vk::memory_size { 65536 }
+				}}
+			},
+			vk::write_descriptor_set {
+				digits_and_letters_descriptor_set,
+				vk::dst_binding{ 1 },
+				vk::descriptor_type::combined_image_sampler,
+				array{ vk::descriptor_image_info {
+					digits_and_letters_image_view,
+					digits_and_letters_sampler,
+					vk::image_layout::shader_read_only_optimal
+				}}
+			}
+		}
+	);
+
+	print::out("descriptor sets updated\n");
 
 	handle<vk::swapchain> swapchain{};
 	on_scope_exit destroy_swapchain = [&] {
@@ -608,14 +774,12 @@ int main() {
 			(unsigned) window_size[0],
 			(unsigned) window_size[1]
 		};
-		push_constant.size[0] = window_size[0];
-		push_constant.size[1] = window_size[1];
 
 		handle<vk::swapchain> prev_swapchain = swapchain;
 
 		swapchain = vk::create_swapchain(
 			instance, device, surface,
-			vk::min_image_count{ 2 },
+			vk::min_image_count { 2 },
 			extent,
 			surface_format.format,
 			surface_format.color_space,
@@ -666,9 +830,9 @@ int main() {
 		span framebuffers{ framebuffers_raw, swapchain_images_count };
 		for(nuint i = 0; i < swapchain_images_count; ++i) {
 			framebuffers[i] = vk::create_framebuffer(
-				instance, device, render_pass,
-				array{ image_views[i] },
-				vk::extent<3>{ extent, 1 }
+				instance, device, tile_render_pass,
+				array { image_views[i] },
+				vk::extent<3> { extent, 1 }
 			);
 		}
 		on_scope_exit destroy_framebuffer = [&] {
@@ -761,45 +925,193 @@ int main() {
 					vk::command_buffer_usage::one_time_submit
 				}
 			);
+
+			struct tile_position_and_size_t {
+				math::vector<float, 2> position;
+				float size;
+				int padding;
+
+				tile_position_and_size_t() = default;
+
+				tile_position_and_size_t(
+					math::vector<float, 2> position,
+					float size
+				) : position { position },
+					size { size }
+				{}
+			};
+
+			tile_position_and_size_t positions_raw[65536 / 16];
+			list positions_list {
+				span {
+					(storage<tile_position_and_size_t>*) positions_raw,
+					table_rows * table_rows
+				}
+			};
+
+			struct positions_and_letters_t {
+				math::vector<float, 2> position;
+				uint32 letter;
+				float width;
+
+				positions_and_letters_t() = default;
+
+				positions_and_letters_t(
+					math::vector<float, 2> position,
+					uint32 letter,
+					float width
+				) : position { position },
+					letter { letter },
+					width { width }
+				{}
+			};
+
+			positions_and_letters_t digits_and_letters_positions_raw[
+				65536 / 16
+			];
+			list digits_and_letters_positions_list {
+				span {
+					(storage<positions_and_letters_t>*)
+					digits_and_letters_positions_raw,
+					nuint(65536 / 16)
+				}
+			};
+
+			math::vector extent_f {
+				(float) extent[0], (float) extent[1]
+			};
+
+			float table_size = numbers {
+					extent_f[0], extent_f[1]
+				}.min() / 1.2F;
+
+			float tile_size = table_size / float(table_rows) / 1.0F;
+
+			for(nuint y = 0; y < table_rows; ++y) {
+				for(nuint x = 0; x < table_rows; ++x) {
+					math::vector p { float(x), float(y) };
+
+					math::vector tile_position =
+						extent_f / 2.0F +
+						((p + 0.5F) / float(table_rows) - 0.5) * table_size;
+
+					positions_list.emplace_back(tile_position, tile_size);
+
+					nuint digits_count = 0;
+					number { table.tiles[y][x] }.for_each_digit(
+						number_base { 10 }, [&](auto) {
+							++digits_count;
+						}
+					);
+
+					nuint digit_index = 0;
+					number { table.tiles[y][x] }.for_each_digit(
+						number_base { 10 },
+						[&](nuint digit) {
+
+							float full_digit_width
+								= tile_size / 4.0F;
+								//= tile_size;
+							float digit_width
+								= full_digit_width;
+								//= full_digit_width / float(digits_count);
+
+							math::vector digit_position =
+								tile_position + math::vector {
+									full_digit_width * (
+										- float(digits_count) / 2.0F +
+										(0.5F + digit_index)
+									),
+									0.0F
+								};
+
+							digits_and_letters_positions_list.emplace_back(
+								digit_position,
+								uint32('0' + digit),
+								digit_width
+							);
+							++digit_index;
+						}
+					);
+				}
+			}
+
+			vk::cmd_update_buffer(instance, device, command_buffer,
+				tile_uniform_buffer, vk::memory_size {
+					16 * positions_list.size()
+				},
+				(void*) positions_raw
+			);
 			vk::cmd_begin_render_pass(instance, device, command_buffer,
-				render_pass,
+				tile_render_pass,
 				framebuffers[image_index],
-				vk::render_area{ extent },
-				vk::clear_value{ vk::clear_color_value{} }
+				vk::render_area { extent },
+				vk::clear_value { vk::clear_color_value{} }
 			);
 			vk::cmd_bind_pipeline(instance, device, command_buffer,
-				pipeline, vk::pipeline_bind_point::graphics
+				tile_pipeline, vk::pipeline_bind_point::graphics
 			);
 			vk::cmd_bind_descriptor_sets(instance, device, command_buffer,
 				vk::pipeline_bind_point::graphics,
-				pipeline_layout,
-				array{ descriptor_set }
+				tiles_pipeline_layout,
+				array { tile_descriptor_set }
 			);
 			vk::cmd_set_scissor(instance, device, command_buffer, extent);
 			vk::cmd_set_viewport(instance, device, command_buffer, extent);
+
 			vk::cmd_push_constants(
 				instance, device, command_buffer,
-				pipeline_layout,
+				tiles_pipeline_layout,
 				vk::push_constant_range {
 					.stages {
-						vk::shader_stage::vertex,
-						vk::shader_stage::fragment,
+						vk::shader_stage::vertex
 					},
-					.size = sizeof(push_constant_t)
+					.size = 2 * sizeof(uint32)
 				},
-				(void*) &push_constant
+				(void*) &extent
 			);
 			vk::cmd_draw(instance, device, command_buffer,
-				vk::vertex_count{ 3 * 2 * 3 * 3 }
+				vk::vertex_count { 3 * 2 * table_rows * table_rows }
 			);
 			vk::cmd_end_render_pass(instance, device, command_buffer);
+
+			vk::cmd_update_buffer(instance, device, command_buffer,
+				digits_and_letters_uniform_buffer, vk::memory_size {
+					16 * digits_and_letters_positions_list.size()
+				},
+				(void*) digits_and_letters_positions_raw
+			);
+
+			vk::cmd_begin_render_pass(instance, device, command_buffer,
+				digits_and_letters_render_pass,
+				framebuffers[image_index],
+				vk::render_area { extent },
+				vk::clear_value { vk::clear_color_value{} }
+			);
+			vk::cmd_bind_pipeline(instance, device, command_buffer,
+				digits_and_letters_pipeline, vk::pipeline_bind_point::graphics
+			);
+			vk::cmd_bind_descriptor_sets(instance, device, command_buffer,
+				vk::pipeline_bind_point::graphics,
+				digits_and_letters_pipeline_layout,
+				array { digits_and_letters_descriptor_set }
+			);
+			vk::cmd_set_scissor(instance, device, command_buffer, extent);
+			vk::cmd_set_viewport(instance, device, command_buffer, extent);
+			vk::cmd_draw(instance, device, command_buffer,
+				vk::vertex_count {
+					(uint32) digits_and_letters_positions_list.size() * 6
+				}
+			);
+			vk::cmd_end_render_pass(instance, device, command_buffer);
+
 			vk::end_command_buffer(instance, device, command_buffer);
 
 			vk::queue_submit(
 				instance, device, queue, command_buffer,
 				vk::wait_semaphore{ acquire_semaphore },
 				vk::signal_semaphore{ submit_semaphore },
-				vk::signal_fence{ submit_fence }
+				vk::signal_fence { submit_fence }
 			);
 
 			vk::result present_result = vk::try_queue_present(
