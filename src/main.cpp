@@ -23,10 +23,23 @@
 #include <numbers.hpp>
 #include <list.hpp>
 
+static enum class game_state_t {
+	waiting_input, animating
+}
+	game_state = game_state_t::waiting_input;
+
+posix::seconds_and_nanoseconds animation_begin_time{};
+static constexpr nuint animation_ms = 50;
+table_t prev_table{};
+movement_table_t movement_table;
+
 int main() {
-	posix::rand_seed(
-		posix::monolitic_clock.secods_and_nanoseconds().seconds
-	);
+	{
+		auto [seconds, nanoseconds]
+			= posix::monolitic_clock.secods_and_nanoseconds();
+
+		posix::rand_seed(seconds + nanoseconds);
+	}
 
 	table.try_put_random_value();
 	table.try_put_random_value();
@@ -41,23 +54,37 @@ int main() {
 			glfw::window*, glfw::key::code key, int,
 			glfw::key::action action, glfw::key::modifiers
 		) {
+			if(game_state != game_state_t::waiting_input) {
+				return;
+			}
+
 			if(action != glfw::key::action::press) return;
 
-			bool moved = false;
+			optional<movement_table_t> possible_movement_table{};
+			prev_table = table;
 
 			switch (key) {
 				case glfw::keys::w:
-					moved = table.try_move<direction::up>();    break;
+				case glfw::keys::up:
+					possible_movement_table = table.try_move<up>();    break;
 				case glfw::keys::s:
-					moved = table.try_move<direction::down>();  break;
+				case glfw::keys::down:
+					possible_movement_table = table.try_move<down>();  break;
 				case glfw::keys::a:
-					moved = table.try_move<direction::left>();  break;
+				case glfw::keys::left:
+					possible_movement_table = table.try_move<left>();  break;
 				case glfw::keys::d:
-					moved = table.try_move<direction::right>(); break;
+				case glfw::keys::right:
+					possible_movement_table = table.try_move<right>(); break;
 			}
 
-			if(moved) {
+			if(possible_movement_table.has_value()) {
+				movement_table = possible_movement_table.get();
+
 				table.try_put_random_value();
+				game_state = game_state_t::animating;
+				animation_begin_time
+					= posix::monolitic_clock.secods_and_nanoseconds();
 			}
 		}
 	);
@@ -892,6 +919,24 @@ int main() {
 		while(!window->should_close()) {
 			glfw_instance.poll_events();
 
+			float t = 1.0;
+
+			if(game_state == game_state_t::animating) {
+				auto[s, ns] = posix::monolitic_clock.secods_and_nanoseconds();
+				auto diff =
+					(s - animation_begin_time.seconds) * 1000 +
+					(int64(ns) - int64(animation_begin_time.nanoseconds))
+						/ (1000 * 1000);
+
+				if(diff > animation_ms) {
+					game_state = game_state_t::waiting_input;
+					movement_table = movement_table_t{};
+				}
+				else {
+					t = float(diff) / float(animation_ms);
+				}
+			}
+
 			vk::expected<vk::image_index> acquire_result
 				= vk::try_acquire_next_image(
 					instance, device, swapchain, acquire_semaphore
@@ -927,21 +972,25 @@ int main() {
 			);
 
 			struct tile_position_and_size_t {
-				math::vector<float, 2> position;
+				math::vector<float, 3> position;
 				float size;
-				int padding;
+				uint32 number;
+				uint32 padding[3];
 
 				tile_position_and_size_t() = default;
 
 				tile_position_and_size_t(
-					math::vector<float, 2> position,
-					float size
-				) : position { position },
-					size { size }
+					math::vector<float, 3> position,
+					float size,
+					uint32 number
+				) :
+					position { position },
+					size { size },
+					number { number }
 				{}
 			};
 
-			tile_position_and_size_t positions_raw[65536 / 16];
+			tile_position_and_size_t positions_raw[65536 / 32];
 			list positions_list {
 				span {
 					(storage<tile_position_and_size_t>*) positions_raw,
@@ -950,14 +999,15 @@ int main() {
 			};
 
 			struct positions_and_letters_t {
-				math::vector<float, 2> position;
+				math::vector<float, 3> position;
 				uint32 letter;
 				float width;
+				uint64 padding;
 
 				positions_and_letters_t() = default;
 
 				positions_and_letters_t(
-					math::vector<float, 2> position,
+					math::vector<float, 3> position,
 					uint32 letter,
 					float width
 				) : position { position },
@@ -967,13 +1017,13 @@ int main() {
 			};
 
 			positions_and_letters_t digits_and_letters_positions_raw[
-				65536 / 16
+				65536 / 32
 			];
 			list digits_and_letters_positions_list {
 				span {
 					(storage<positions_and_letters_t>*)
 					digits_and_letters_positions_raw,
-					nuint(65536 / 16)
+					nuint(65536 / 32)
 				}
 			};
 
@@ -983,34 +1033,57 @@ int main() {
 
 			float table_size = numbers {
 					extent_f[0], extent_f[1]
-				}.min() / 1.2F;
+				}.min() / 1.1F;
 
-			float tile_size = table_size / float(table_rows) / 1.0F;
+			float tile_size = table_size / float(table_rows) / 1.1F;
+			auto& current_tiles =
+				game_state == game_state_t::animating ?
+				prev_table.tiles :
+				table.tiles;
 
 			for(nuint y = 0; y < table_rows; ++y) {
 				for(nuint x = 0; x < table_rows; ++x) {
-					math::vector p { float(x), float(y) };
+					movement_t movement = movement_table.tiles[y][x];
+					direction_t movement_direction
+						= movement.get_same_as<direction_t>();
+					nuint movement_distance = movement.get_same_as<nuint>();
+
+					math::vector p
+						= math::vector { float(x), float(y) } +
+						  math::vector {
+							movement_direction.x, movement_direction.y
+						} * t * float(movement_distance);
 
 					math::vector tile_position =
 						extent_f / 2.0F +
 						((p + 0.5F) / float(table_rows) - 0.5) * table_size;
 
-					positions_list.emplace_back(tile_position, tile_size);
+					float z = 0.0;//float(movement_distance) / 100.0F;
+
+					positions_list.emplace_back(
+						math::vector<float, 3> {
+							tile_position[0], tile_position[1], z
+						},
+						tile_size,
+						current_tiles[y][x]
+					);
+
+					if(current_tiles[y][x] == 0) continue;
 
 					nuint digits_count = 0;
-					number { table.tiles[y][x] }.for_each_digit(
+					number { current_tiles[y][x] }.for_each_digit(
 						number_base { 10 }, [&](auto) {
 							++digits_count;
 						}
 					);
 
 					nuint digit_index = 0;
-					number { table.tiles[y][x] }.for_each_digit(
+					number { current_tiles[y][x] }.for_each_digit(
 						number_base { 10 },
 						[&](nuint digit) {
 
 							float full_digit_width
-								= tile_size / 4.0F;
+								= tile_size / 3.0F;
 								//= tile_size;
 							float digit_width
 								= full_digit_width;
@@ -1026,7 +1099,9 @@ int main() {
 								};
 
 							digits_and_letters_positions_list.emplace_back(
-								digit_position,
+								math::vector<float, 3> {
+									digit_position[0], digit_position[1], z
+								},
 								uint32('0' + digit),
 								digit_width
 							);
@@ -1038,7 +1113,7 @@ int main() {
 
 			vk::cmd_update_buffer(instance, device, command_buffer,
 				tile_uniform_buffer, vk::memory_size {
-					16 * positions_list.size()
+					32 * positions_list.size()
 				},
 				(void*) positions_raw
 			);
@@ -1077,7 +1152,7 @@ int main() {
 
 			vk::cmd_update_buffer(instance, device, command_buffer,
 				digits_and_letters_uniform_buffer, vk::memory_size {
-					16 * digits_and_letters_positions_list.size()
+					32 * digits_and_letters_positions_list.size()
 				},
 				(void*) digits_and_letters_positions_raw
 			);

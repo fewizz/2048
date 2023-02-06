@@ -1,9 +1,29 @@
 #version 460
 
 layout(location = 0) in vec2 coord_snorm;
+layout(location = 1) flat in uint value;
 
 layout(location = 0) out vec4 out_color;
 
 void main() {
-	out_color = vec4(0.0, 0.0, 1.0 - dot(coord_snorm, coord_snorm), 1.0);
+	vec3 color = vec3(
+		log2(value) / 11.0 / 2.0,
+		log2(value) / 11.0,
+		log2(value) / 11.0 + 0.5
+	);
+ 
+	if(value == 0u) {
+		color = vec3(0.1);
+	}
+
+	vec2 coord = vec2(abs(coord_snorm.x), abs(coord_snorm.y));
+
+	float r = 0.1;
+
+	if(coord.x < 1.0 - r || coord.y < 1.0 - r) {
+		out_color = vec4(color, 1.0);
+	}
+	else {
+		out_color = vec4(color * float(length(coord - (1.0 - r)) <= r), 1.0);
+	}
 }

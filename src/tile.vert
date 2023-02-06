@@ -5,8 +5,9 @@ layout(push_constant) uniform table_t {
 };
 
 struct tile_position_and_size_t {
-	vec2 position;
+	vec3 position;
 	float size;
+	uint number;
 };
 
 layout(binding = 0) uniform tile_positions_t {
@@ -14,6 +15,7 @@ layout(binding = 0) uniform tile_positions_t {
 };
 
 layout(location = 0) out vec2 coord_snorm;
+layout(location = 1) flat out uint value;
 
 void main() {
 	uint i = gl_VertexIndex % (3 * 2);
@@ -31,12 +33,12 @@ void main() {
 	coord_snorm = verticies[i];
 
 	tile_position_and_size_t tile = tiles[gl_VertexIndex / (3 * 2)];
-	vec2 tile_position = tile.position;
+	value = tile.number;
 
 	gl_Position = vec4(
-		(tile_position + verticies[i] * tile.size / 2.0)
+		(tile.position.xy + verticies[i] * tile.size / 2.0)
 		/ window_size * 2.0 - 1.0,
-		0.0,
+		tile.position.z,
 		1.0
 	);
 }

@@ -26,5 +26,5 @@ void main() {
 		r = get_letter_or_digit_opacity(vec2(i % 10, 1 + i / 10));
 	}
 
-	out_color = vec4(r);
+	out_color = vec4(vec3(1.0), r);
 }

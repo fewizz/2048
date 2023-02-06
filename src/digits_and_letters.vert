@@ -4,7 +4,7 @@ layout(location = 0) out vec2 tex_coord_snorm;
 layout(location = 1) flat out uint ascii;
 
 struct position_and_letter_t {
-	vec2 position;
+	vec3 position;
 	uint letter;
 	float width;
 };
@@ -36,12 +36,12 @@ void main() {
 		= positions_and_letters[gl_VertexIndex / (3 * 2)];
 
 	ascii = pos_and_letter.letter;
-	vec2 position = pos_and_letter.position;
+	vec2 position = pos_and_letter.position.xy;
 
 	gl_Position = vec4(
 		(position + verticies[i] * pos_and_letter.width * vec2(1.0, 2.0) / 2.0)
 		/ window_size * 2.0 - 1.0,
-		0.0,
+		pos_and_letter.position.z,
 		1.0
 	);
 }
