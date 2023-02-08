@@ -22,7 +22,9 @@ vk::get_global_function_t<Function>::operator () () const {
 
 	if(function_holder<Function>::function_ptr == nullptr) {
 		function_holder<Function>::function_ptr = 
-			(prototype) glfw_instance.get_global_proc_address(c_string{ name });
+			(prototype) glfw_instance.get_global_proc_address(
+				c_string { name }
+			);
 	}
 
 	if(function_holder<Function>::function_ptr == nullptr) {
@@ -45,7 +47,7 @@ vk::get_instance_function_t<Function>::operator () (
 		function_holder<Function>::function_ptr = 
 			(prototype) glfw_instance.get_instance_proc_address(
 				instance,
-				c_string{ name }
+				c_string { name }
 			);
 	}
 
@@ -68,7 +70,7 @@ vk::get_device_function_t<Function>::operator () (
 	if(function_holder<Function>::function_ptr == nullptr) {
 		function_holder<Function>::function_ptr = 
 			(prototype) vk::get_device_proc_address(
-				instance, device, c_string{ name }
+				instance, device, c_string { name }
 			);
 	}
 

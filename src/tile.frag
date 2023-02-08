@@ -11,7 +11,7 @@ void main() {
 		log2(value) / 11.0,
 		log2(value) / 11.0 + 0.5
 	);
- 
+	
 	if(value == 0u) {
 		color = vec3(0.1);
 	}
@@ -24,6 +24,7 @@ void main() {
 		out_color = vec4(color, 1.0);
 	}
 	else {
-		out_color = vec4(color * float(length(coord - (1.0 - r)) <= r), 1.0);
+		float b = float(length(coord - (1.0 - r)) <= r);
+		out_color = vec4(color * b, b);
 	}
 }

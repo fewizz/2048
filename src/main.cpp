@@ -25,11 +25,10 @@
 
 static enum class game_state_t {
 	waiting_input, animating
-}
-	game_state = game_state_t::waiting_input;
+} game_state = game_state_t::waiting_input;
 
 posix::seconds_and_nanoseconds animation_begin_time{};
-static constexpr nuint animation_ms = 50;
+static constexpr nuint animation_ms = 1000;
 table_t prev_table{};
 movement_table_t movement_table;
 
@@ -64,17 +63,17 @@ int main() {
 			prev_table = table;
 
 			switch (key) {
-				case glfw::keys::w:
-				case glfw::keys::up:
+				case glfw::keys::w :
+				case glfw::keys::up :
 					possible_movement_table = table.try_move<up>();    break;
-				case glfw::keys::s:
-				case glfw::keys::down:
+				case glfw::keys::s :
+				case glfw::keys::down :
 					possible_movement_table = table.try_move<down>();  break;
-				case glfw::keys::a:
-				case glfw::keys::left:
+				case glfw::keys::a :
+				case glfw::keys::left :
 					possible_movement_table = table.try_move<left>();  break;
-				case glfw::keys::d:
-				case glfw::keys::right:
+				case glfw::keys::d :
+				case glfw::keys::right :
 					possible_movement_table = table.try_move<right>(); break;
 			}
 
@@ -92,15 +91,15 @@ int main() {
 	handle<vk::instance> instance =
 		ranges {
 			glfw_instance.get_required_instance_extensions(),
-			array{ vk::extension_name{ "VK_EXT_debug_report" } }
+			array{ vk::extension_name { "VK_EXT_debug_report" } }
 		}.concat_view().view_copied_elements_on_stack(
 			[](span<vk::extension_name> extensions_names) {
 				return vk::create_instance(
 					vk::application_info {
-						vk::api_version{ vk::major{ 1 }, vk::minor{ 0 } }
+						vk::api_version { vk::major { 1 }, vk::minor { 0 } }
 					},
 					extensions_names,
-					array{ vk::layer_name{ "VK_LAYER_KHRONOS_validation" } }
+					array{ vk::layer_name { "VK_LAYER_KHRONOS_validation" } }
 				);
 			}
 		);
@@ -128,7 +127,7 @@ int main() {
 				c_string_of_unknown_size message,
 				[[maybe_unused]] void* user_data
 			) -> uint32 {
-				print::out("[vk] ", c_string{ message }.sized(), "\n");
+				print::out("[vk] ", c_string { message }.sized(), "\n");
 				return 0;
 			}
 		);
@@ -139,19 +138,32 @@ int main() {
 	handle<vk::physical_device> physical_device
 		= instance->get_first_physical_device();
 
-	print::out("physical device selected\n");
+	vk::physical_device_properties physical_device_props
+		= vk::get_physical_device_properties(instance, physical_device);
+
+	print::out("physical device selected: ", physical_device_props.name, "\n");
 
 	handle<vk::surface> surface = window->create_surface(instance);
-	print::out("surface created\n");
 	on_scope_exit destroy_surface = [&] {
 		vk::destroy_surface(instance, surface);
 	};
 
-	vk::surface_format surface_format
-		= vk::get_first_physical_device_surface_format(
-			instance, physical_device,
-			surface
-		);
+	print::out("surface created\n");
+
+	vk::surface_format surface_format;
+
+	vk::view_physical_device_surface_formats(
+		instance, physical_device, surface,
+		[&](span<vk::surface_format> formats) {
+			surface_format = formats[0];
+			if(
+				formats.size() == 1 &&
+				formats[0].format == vk::format::undefined
+			) {
+				surface_format.format = vk::format::b8_g8_r8_a8_unorm;
+			}
+		}
+	);
 
 	print::out("surface format selected\n");
 
@@ -166,7 +178,7 @@ int main() {
 					vk::get_physical_device_surface_support(
 						instance, physical_device,
 						surface,
-						vk::queue_family_index{ index }
+						vk::queue_family_index { index }
 					);
 
 				if(graphics && supports_surface) {
@@ -181,16 +193,16 @@ int main() {
 
 	print::out("queue family index selected\n");
 
-	vk::queue_priority queue_priority = 1.0F;
+	array queue_priorities { vk::queue_priority { 1.0F } };
 
 	handle<vk::device> device = vk::create_device(
 		instance, physical_device,
 		array { vk::queue_create_info {
 			queue_family_index,
-			vk::queue_count{ 1 },
-			vk::queue_priorities{ &queue_priority }
+			vk::queue_count { 1 },
+			queue_priorities
 		}},
-		array{ vk::extension_name{ "VK_KHR_swapchain" } }
+		array { vk::extension_name { "VK_KHR_swapchain" } }
 	);
 	on_scope_exit destroy_device = [&] {
 		vk::destroy_device(instance, device);
@@ -199,7 +211,7 @@ int main() {
 	print::out("device created\n");
 
 	png_data digits_and_letters_image_data =
-		read_png(c_string{ "digits_and_letters.png" });
+		read_png(c_string { "digits_and_letters.png" });
 
 	print::out("\"digits_and_letters.png\" read\n");
 
@@ -212,9 +224,9 @@ int main() {
 			digits_and_letters_image_data.height
 		},
 		vk::image_tiling::linear,
-		vk::image_usages{ vk::image_usage::sampled },
-		array{ queue_family_index },
-		vk::initial_layout{ vk::image_layout::preinitialized }
+		vk::image_usages { vk::image_usage::sampled },
+		array { queue_family_index },
+		vk::initial_layout { vk::image_layout::preinitialized }
 	);
 	on_scope_exit destroy_digits_and_letters_image = [&] {
 		vk::destroy_image(instance, device, digits_and_letters_image);
@@ -239,7 +251,7 @@ int main() {
 
 	handle<vk::device_memory> digits_and_letters_memory = vk::allocate_memory(
 		instance, device,
-		vk::memory_size{ digits_and_letters_memory_requirements.size },
+		vk::memory_size { digits_and_letters_memory_requirements.size },
 		digits_and_letters_memory_type_index
 	);
 	on_scope_exit destroy_digits_and_letters_memory = [&] {
@@ -292,12 +304,12 @@ int main() {
 
 	handle<vk::sampler> digits_and_letters_sampler = vk::create_sampler(
 		instance, device,
-		vk::mag_filter{ vk::filter::linear },
-		vk::min_filter{ vk::filter::linear },
+		vk::mag_filter { vk::filter::linear },
+		vk::min_filter { vk::filter::linear },
 		vk::mipmap_mode::nearest,
-		vk::address_mode_u{ vk::address_mode::clamp_to_edge },
-		vk::address_mode_v{ vk::address_mode::clamp_to_edge },
-		vk::address_mode_w{ vk::address_mode::clamp_to_edge }
+		vk::address_mode_u { vk::address_mode::clamp_to_edge },
+		vk::address_mode_v { vk::address_mode::clamp_to_edge },
+		vk::address_mode_w { vk::address_mode::clamp_to_edge }
 	);
 	on_scope_exit destroy_digits_and_letters_sampler = [&] {
 		vk::destroy_sampler(instance, device, digits_and_letters_sampler);
@@ -308,15 +320,15 @@ int main() {
 	handle<vk::descriptor_pool> descriptor_pool
 		= vk::create_descriptor_pool(
 			instance, device,
-			vk::max_sets{ 2 },
+			vk::max_sets { 2 },
 			array {
 				vk::descriptor_pool_size {
 					vk::descriptor_type::uniform_buffer,
-					vk::descriptor_count{ 2 }
+					vk::descriptor_count { 2 }
 				},
 				vk::descriptor_pool_size {
 					vk::descriptor_type::combined_image_sampler,
-					vk::descriptor_count{ 1 }
+					vk::descriptor_count { 1 }
 				}
 			}
 		);
@@ -330,9 +342,9 @@ int main() {
 		= vk::create_descriptor_set_layout(
 			instance, device,
 			array { vk::descriptor_set_layout_binding {
-				vk::descriptor_binding{ 0 },
+				vk::descriptor_binding { 0 },
 				vk::descriptor_type::uniform_buffer,
-				vk::descriptor_count{ 1 },
+				vk::descriptor_count { 1 },
 				vk::shader_stages {
 					vk::shader_stage::vertex
 				}
@@ -350,17 +362,17 @@ int main() {
 			instance, device,
 			array {
 				vk::descriptor_set_layout_binding {
-					vk::descriptor_binding{ 0 },
+					vk::descriptor_binding { 0 },
 					vk::descriptor_type::uniform_buffer,
-					vk::descriptor_count{ 1 },
+					vk::descriptor_count { 1 },
 					vk::shader_stages {
 						vk::shader_stage::vertex
 					}
 				},
 				vk::descriptor_set_layout_binding {
-					vk::descriptor_binding{ 1 },
+					vk::descriptor_binding { 1 },
 					vk::descriptor_type::combined_image_sampler,
-					vk::descriptor_count{ 1 },
+					vk::descriptor_count { 1 },
 					vk::shader_stages {
 						vk::shader_stage::fragment
 					}
@@ -398,12 +410,14 @@ int main() {
 
 	handle<vk::render_pass> tile_render_pass = vk::create_render_pass(
 		instance, device,
-		array { vk::attachment_description {
-			surface_format.format,
-			vk::load_op { vk::attachment_load_op::clear },
-			vk::store_op { vk::attachment_store_op::store },
-			vk::final_layout { vk::image_layout::color_attachment_optimal }
-		}},
+		array {
+			vk::attachment_description {
+				surface_format.format,
+				vk::load_op { vk::attachment_load_op::clear },
+				vk::store_op { vk::attachment_store_op::store },
+				vk::final_layout { vk::image_layout::color_attachment_optimal }
+			}
+		},
 		array {
 			vk::subpass_description{ attachment_references }
 		},
@@ -424,17 +438,19 @@ int main() {
 	handle<vk::render_pass> digits_and_letters_render_pass
 		= vk::create_render_pass(
 			instance, device,
-			array { vk::attachment_description {
-				surface_format.format,
-				vk::load_op { vk::attachment_load_op::load },
-				vk::store_op { vk::attachment_store_op::store },
-				vk::initial_layout {
-					vk::image_layout::color_attachment_optimal
-				},
-				vk::final_layout { vk::image_layout::present_src }
-			}},
 			array {
-				vk::subpass_description{ attachment_references }
+				vk::attachment_description {
+					surface_format.format,
+					vk::load_op { vk::attachment_load_op::load },
+					vk::store_op { vk::attachment_store_op::store },
+					vk::initial_layout {
+						vk::image_layout::color_attachment_optimal
+					},
+					vk::final_layout { vk::image_layout::present_src }
+				}
+			},
+			array {
+				vk::subpass_description { attachment_references }
 			},
 			array {
 				vk::subpass_dependency {
@@ -501,13 +517,14 @@ int main() {
 		= vk::create_pipeline_layout(
 			instance, device,
 			array { tile_descriptor_set_layout },
-			array { vk::push_constant_range {
-				.stages {
-					vk::shader_stage::vertex
-				},
-				.offset = 0,
-				.size = 2 * sizeof(uint32)
-			}}
+			array {
+				vk::push_constant_range {
+					vk::shader_stages {
+						vk::shader_stage::vertex
+					},
+					vk::size { 2 * sizeof(uint32) }
+				}
+			}
 		);
 
 	on_scope_exit destroy_tile_pipeline_layout = [&] {
@@ -518,13 +535,14 @@ int main() {
 		= vk::create_pipeline_layout(
 			instance, device,
 			array { digits_and_letters_descriptor_set_layout },
-			array { vk::push_constant_range {
-				.stages {
-					vk::shader_stage::vertex
-				},
-				.offset = 0,
-				.size = 2 * sizeof(uint32)
-			}}
+			array {
+				vk::push_constant_range {
+					vk::shader_stages {
+						vk::shader_stage::vertex
+					},
+					vk::size { 2 * sizeof(uint32) }
+				}
+			}
 		);
 
 	on_scope_exit destroy_digits_and_letters_pipeline_layout = [&] {
@@ -536,7 +554,14 @@ int main() {
 	print::out("pipeline layout created\n");
 
 	vk::pipeline_color_blend_attachment_state tile_pcbas {
-		vk::enable_blend{ false }
+		vk::enable_blend { false }
+		/*vk::enable_blend { true },
+		vk::src_color_blend_factor { vk::blend_factor::src_alpha },
+		vk::dst_color_blend_factor { vk::blend_factor::one_minus_src_alpha },
+		vk::color_blend_op { vk::blend_op::add },
+		vk::src_alpha_blend_factor { vk::blend_factor::one },
+		vk::dst_alpha_blend_factor { vk::blend_factor::one_minus_src_alpha },
+		vk::alpha_blend_op { vk::blend_op::add }*/
 	};
 
 	auto dynamic_states = array {
@@ -545,7 +570,7 @@ int main() {
 
 	handle<vk::pipeline> tile_pipeline = vk::create_graphics_pipelines(
 		instance, device,
-		tiles_pipeline_layout, tile_render_pass, vk::subpass{ 0 },
+		tiles_pipeline_layout, tile_render_pass, vk::subpass { 0 },
 		vk::pipeline_input_assembly_state_create_info {
 			.topology = vk::primitive_topology::triangle_list
 		},
@@ -553,12 +578,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				tile_vert_shader_module,
-				vk::entrypoint_name{ "main" }
+				vk::entrypoint_name { "main" }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				tile_frag_shader_module,
-				vk::entrypoint_name{ "main" }
+				vk::entrypoint_name { "main" }
 			}
 		},
 		vk::pipeline_multisample_state_create_info{},
@@ -573,7 +598,7 @@ int main() {
 			span{ &tile_pcbas }
 		},
 		vk::pipeline_viewport_state_create_info {
-			vk::viewport_count { 1 }, vk::scissor_count{ 1 }
+			vk::viewport_count { 1 }, vk::scissor_count { 1 }
 		},
 		vk::pipeline_dynamic_state_create_info { dynamic_states }
 	);
@@ -588,7 +613,7 @@ int main() {
 		vk::color_blend_op { vk::blend_op::add },
 		vk::src_alpha_blend_factor { vk::blend_factor::one },
 		vk::dst_alpha_blend_factor { vk::blend_factor::zero },
-		vk::alpha_blend_op { vk::blend_op::add },
+		vk::alpha_blend_op { vk::blend_op::add }
 	};
 
 	handle<vk::pipeline> digits_and_letters_pipeline
@@ -603,12 +628,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				digits_and_letters_vert_shader_module,
-				vk::entrypoint_name{ "main" }
+				vk::entrypoint_name { "main" }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				digits_and_letters_frag_shader_module,
-				vk::entrypoint_name{ "main" }
+				vk::entrypoint_name { "main" }
 			}
 		},
 		vk::pipeline_multisample_state_create_info{},
@@ -623,7 +648,7 @@ int main() {
 			span{ &digits_and_letters_pcbas }
 		},
 		vk::pipeline_viewport_state_create_info {
-			vk::viewport_count { 1 }, vk::scissor_count{ 1 }
+			vk::viewport_count { 1 }, vk::scissor_count { 1 }
 		},
 		vk::pipeline_dynamic_state_create_info { dynamic_states }
 	);
@@ -672,7 +697,7 @@ int main() {
 			vk::src_stages{ vk::pipeline_stage::all_commands },
 			vk::dst_stages{ vk::pipeline_stage::all_commands },
 			array{ vk::image_memory_barrier {
-				.src_access = { vk::access::memory_write },
+				.src_access = { vk::access::host_write },
 				.dst_access = { vk::access::shader_read },
 				.old_layout = { vk::image_layout::preinitialized },
 				.new_layout = { vk::image_layout::shader_read_only_optimal },
@@ -750,9 +775,9 @@ int main() {
 		instance, device,
 		vk::write_descriptor_set {
 			tile_descriptor_set,
-			vk::dst_binding{ 0 },
+			vk::dst_binding { 0 },
 			vk::descriptor_type::uniform_buffer,
-			array{ vk::descriptor_buffer_info {
+			array { vk::descriptor_buffer_info {
 				tile_uniform_buffer,
 				vk::memory_size { 65536 }
 			}}
@@ -764,18 +789,18 @@ int main() {
 		array {
 			vk::write_descriptor_set {
 				digits_and_letters_descriptor_set,
-				vk::dst_binding{ 0 },
+				vk::dst_binding { 0 },
 				vk::descriptor_type::uniform_buffer,
-				array{ vk::descriptor_buffer_info {
+				array { vk::descriptor_buffer_info {
 					digits_and_letters_uniform_buffer,
 					vk::memory_size { 65536 }
 				}}
 			},
 			vk::write_descriptor_set {
 				digits_and_letters_descriptor_set,
-				vk::dst_binding{ 1 },
+				vk::dst_binding { 1 },
 				vk::descriptor_type::combined_image_sampler,
-				array{ vk::descriptor_image_info {
+				array { vk::descriptor_image_info {
 					digits_and_letters_image_view,
 					digits_and_letters_sampler,
 					vk::image_layout::shader_read_only_optimal
@@ -791,22 +816,46 @@ int main() {
 		if(swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, swapchain);
 		}
+		print::out("swapchain destroyed\n");
 	};
 
 	print::out.flush();
 
 	while(!window->should_close()) {
 		auto window_size = window->get_size();
-		vk::extent<2> extent {
-			(unsigned) window_size[0],
-			(unsigned) window_size[1]
-		};
 
 		handle<vk::swapchain> prev_swapchain = swapchain;
 
+		vk::surface_capabilities surface_caps =
+		vk::get_physical_device_surface_capabilities(
+			instance, physical_device, surface
+		);
+
+		vk::extent<2> extent = surface_caps.current_extent;
+
+		if(extent.width() == unsigned(-1) && extent.height() == unsigned(-1)) {
+			extent.width() = number { window_size[0] }.clamp(
+				surface_caps.min_image_extent.width(),
+				surface_caps.max_image_extent.width()
+			);
+			extent.height() = number { window_size[1] }.clamp(
+				surface_caps.min_image_extent.height(),
+				surface_caps.max_image_extent.height()
+			);
+		}
+		window_size = math::vector {
+			(int) extent.width(),
+			(int) extent.height()
+		};
+
 		swapchain = vk::create_swapchain(
 			instance, device, surface,
-			vk::min_image_count { 2 },
+			vk::min_image_count {
+				number { 2u }.clamp(
+					surface_caps.min_image_count,
+					surface_caps.max_image_count
+				)
+			},
 			extent,
 			surface_format.format,
 			surface_format.color_space,
@@ -816,13 +865,13 @@ int main() {
 			},
 			vk::sharing_mode::exclusive,
 			vk::present_mode::fifo,
-			vk::clipped{ true },
+			vk::clipped { true },
 			vk::surface_transform::identity,
 			vk::composite_alpha::opaque,
 			swapchain
 		);
 
-		print::out("swapchain created\n");
+		print::out("swapchain (re)created\n");
 
 		if(prev_swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, prev_swapchain);
@@ -849,6 +898,7 @@ int main() {
 			for(handle<vk::image_view> image_view : image_views) {
 				vk::destroy_image_view(instance, device, image_view);
 			}
+			print::out("image views freed\n");
 		};
 
 		print::out("image views created\n");
@@ -866,6 +916,7 @@ int main() {
 			for(handle<vk::framebuffer> framebuffer : framebuffers) {
 				vk::destroy_framebuffer(instance, device, framebuffer);
 			}
+			print::out("framebuffers freed\n");
 		};
 
 		print::out("framebuffers created\n");
@@ -881,6 +932,7 @@ int main() {
 			vk::free_command_buffers(
 				instance, device, command_pool, command_buffers
 			);
+			print::out("command buffers freed\n");
 		};
 
 		print::out("command buffers allocated\n");
@@ -894,27 +946,44 @@ int main() {
 			for(handle<vk::fence> fence : fences) {
 				vk::destroy_fence(instance, device, fence);
 			}
+			print::out("fences destroyed\n");
 		};
 
-		print::out.flush();
+		print::out("fences created\n");
 
 		handle<vk::semaphore> acquire_semaphore = vk::create_semaphore(
 			instance, device
 		);
 		on_scope_exit destroy_acquire_semaphore = [&] {
 			vk::destroy_semaphore(instance, device, acquire_semaphore);
+			print::out("acquire semaphore destroyed\n");
 		};
+
+		print::out("acquire semaphore created\n");
+
 		handle<vk::semaphore> submit_semaphore = vk::create_semaphore(
 			instance, device
 		);
 		on_scope_exit destroy_submit_semaphore = [&] {
 			vk::destroy_semaphore(instance, device, submit_semaphore);
+			print::out("submit semaphore destroyed\n");
 		};
 
-		handle<vk::fence> submit_fence = vk::create_fence(instance, device);
+		print::out("submit semaphore created\n");
+
+		handle<vk::fence> submit_fence = vk::create_fence(
+			instance, device,
+			vk::fence_create_flags{ vk::fence_create_flag::signaled }
+		);
+
 		on_scope_exit destroy_submit_fence = [&] {
 			vk::destroy_fence(instance, device, submit_fence);
+			print::out("submit fence destroyed\n");
 		};
+
+		print::out("submit fence created\n");
+
+		print::out.flush();
 
 		while(!window->should_close()) {
 			glfw_instance.poll_events();
@@ -923,7 +992,7 @@ int main() {
 
 			if(game_state == game_state_t::animating) {
 				auto[s, ns] = posix::monolitic_clock.secods_and_nanoseconds();
-				auto diff =
+				nuint diff =
 					(s - animation_begin_time.seconds) * 1000 +
 					(int64(ns) - int64(animation_begin_time.nanoseconds))
 						/ (1000 * 1000);
@@ -1058,7 +1127,7 @@ int main() {
 						extent_f / 2.0F +
 						((p + 0.5F) / float(table_rows) - 0.5) * table_size;
 
-					float z = 0.0;//float(movement_distance) / 100.0F;
+					float z = 0.0F;//1.0 - float(movement_distance) / 100.0F;
 
 					positions_list.emplace_back(
 						math::vector<float, 3> {
@@ -1080,7 +1149,7 @@ int main() {
 					nuint digit_index = 0;
 					number { current_tiles[y][x] }.for_each_digit(
 						number_base { 10 },
-						[&](nuint digit) {
+						[&] (nuint digit) {
 
 							float full_digit_width
 								= tile_size / 3.0F;
@@ -1138,10 +1207,10 @@ int main() {
 				instance, device, command_buffer,
 				tiles_pipeline_layout,
 				vk::push_constant_range {
-					.stages {
+					vk::shader_stages {
 						vk::shader_stage::vertex
 					},
-					.size = 2 * sizeof(uint32)
+					vk::size { 2 * sizeof(uint32) }
 				},
 				(void*) &extent
 			);
@@ -1184,15 +1253,15 @@ int main() {
 
 			vk::queue_submit(
 				instance, device, queue, command_buffer,
-				vk::wait_semaphore{ acquire_semaphore },
-				vk::signal_semaphore{ submit_semaphore },
+				vk::wait_semaphore { acquire_semaphore },
+				vk::signal_semaphore { submit_semaphore },
 				vk::signal_fence { submit_fence }
 			);
 
 			vk::result present_result = vk::try_queue_present(
 				instance, device, queue,
 				swapchain, image_index,
-				vk::wait_semaphore{ submit_semaphore }
+				vk::wait_semaphore { submit_semaphore }
 			);
 
 			if(should_update_swapchain(present_result)) {

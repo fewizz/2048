@@ -23,10 +23,11 @@ cp ${root}/src/digits_and_letters.png ${root}/build/
 declare -a args
 
 if [[ $OS != Windows_NT ]]; then
-	additional_args+=(-fsanitize=undefined)
-	additional_args+=(-fsanitize=memory)
+	#additional_args+=(-fsanitize=undefined)
+	#additional_args+=(-fsanitize=memory)
 	additional_args+=(-lglfw)
 else
+	additional_args+=(-static)
 	additional_args+=(-lglfw3)
 	additional_args+=(-lgdi32)
 fi
@@ -36,7 +37,6 @@ clang++ \
 	-nostdinc++ \
 	-Wall \
 	-Wextra \
-	-static \
 	-g \
 	-I ${root}/../core/include \
 	-I ${root}/../math/include \
