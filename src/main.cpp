@@ -91,7 +91,10 @@ int main() {
 	handle<vk::instance> instance =
 		ranges {
 			glfw_instance.get_required_instance_extensions(),
-			array{ vk::extension_name { "VK_EXT_debug_report" } }
+			array {
+				vk::extension_name { "VK_EXT_debug_report" },
+				vk::extension_name { "VK_EXT_debug_utils" }
+			}
 		}.concat_view().view_copied_elements_on_stack(
 			[](span<vk::extension_name> extensions_names) {
 				return vk::create_instance(
@@ -204,6 +207,11 @@ int main() {
 		}},
 		array { vk::extension_name { "VK_KHR_swapchain" } }
 	);
+	vk::debug_utils::set_object_name(
+		instance, device,
+		device,
+		vk::debug_utils::object_name { "device" }
+	);
 	on_scope_exit destroy_device = [&] {
 		vk::destroy_device(instance, device);
 	};
@@ -225,7 +233,6 @@ int main() {
 		},
 		vk::image_tiling::linear,
 		vk::image_usages { vk::image_usage::sampled },
-		array { queue_family_index },
 		vk::initial_layout { vk::image_layout::preinitialized }
 	);
 	on_scope_exit destroy_digits_and_letters_image = [&] {
@@ -401,9 +408,16 @@ int main() {
 
 	print::out("descriptor sets allocated\n");
 
-	array attachment_references {
-		vk::color_attachment_reference {
+	array depth_attachment_references {
+		vk::depth_stencil_attachment_reference {
 			0,
+			vk::image_layout::depth_stencil_attachment_optimal
+		}
+	};
+
+	array color_attachment_references {
+		vk::color_attachment_reference {
+			1,
 			vk::image_layout::color_attachment_optimal
 		}
 	};
@@ -412,25 +426,34 @@ int main() {
 		instance, device,
 		array {
 			vk::attachment_description {
-				surface_format.format,
+				vk::format::d32_sfloat,
+				vk::initial_layout { vk::image_layout::undefined },
 				vk::load_op { vk::attachment_load_op::clear },
+				vk::final_layout {
+					vk::image_layout::depth_stencil_attachment_optimal
+				},
 				vk::store_op { vk::attachment_store_op::store },
-				vk::final_layout { vk::image_layout::color_attachment_optimal }
+			},
+			vk::attachment_description {
+				surface_format.format,
+				vk::initial_layout { vk::image_layout::undefined },
+				vk::load_op { vk::attachment_load_op::clear },
+				vk::final_layout { vk::image_layout::color_attachment_optimal },
+				vk::store_op { vk::attachment_store_op::store },
 			}
 		},
 		array {
-			vk::subpass_description{ attachment_references }
-		},
-		array {
-			vk::subpass_dependency {
-				vk::src_subpass { vk::subpass_external },
-				vk::dst_subpass { 0 },
-				vk::src_stages { vk::pipeline_stage::color_attachment_output },
-				vk::dst_stages { vk::pipeline_stage::color_attachment_output }
+			vk::subpass_description {
+				depth_attachment_references,
+				color_attachment_references
 			}
 		}
 	);
-
+	vk::debug_utils::set_object_name(
+		instance, device,
+		tile_render_pass,
+		vk::debug_utils::object_name { "tile render pass" }
+	);
 	on_scope_exit destroy_tile_render_pass = [&] {
 		vk::destroy_render_pass(instance, device, tile_render_pass);
 	};
@@ -440,31 +463,38 @@ int main() {
 			instance, device,
 			array {
 				vk::attachment_description {
-					surface_format.format,
+					vk::format::d32_sfloat,
+					vk::initial_layout {
+						vk::image_layout::depth_stencil_attachment_optimal
+					},
 					vk::load_op { vk::attachment_load_op::load },
+					vk::final_layout {
+						vk::image_layout::depth_stencil_attachment_optimal
+					},
 					vk::store_op { vk::attachment_store_op::store },
+				},
+				vk::attachment_description {
+					surface_format.format,
 					vk::initial_layout {
 						vk::image_layout::color_attachment_optimal
 					},
-					vk::final_layout { vk::image_layout::present_src }
+					vk::load_op { vk::attachment_load_op::load },
+					vk::final_layout { vk::image_layout::present_src },
+					vk::store_op { vk::attachment_store_op::store }
 				}
 			},
 			array {
-				vk::subpass_description { attachment_references }
-			},
-			array {
-				vk::subpass_dependency {
-					vk::src_subpass { vk::subpass_external },
-					vk::dst_subpass { 0 },
-					vk::src_stages {
-						vk::pipeline_stage::color_attachment_output
-					},
-					vk::dst_stages {
-						vk::pipeline_stage::color_attachment_output
-					}
+				vk::subpass_description {
+					depth_attachment_references,
+					color_attachment_references
 				}
 			}
 		);
+	vk::debug_utils::set_object_name(
+		instance, device,
+		digits_and_letters_render_pass,
+		vk::debug_utils::object_name { "digits and letters render pass" }
+	);
 	on_scope_exit destroy_digits_and_letters_render_pass = [&] {
 		vk::destroy_render_pass(
 			instance, device, digits_and_letters_render_pass
@@ -586,8 +616,13 @@ int main() {
 				vk::entrypoint_name { "main" }
 			}
 		},
-		vk::pipeline_multisample_state_create_info{},
-		vk::pipeline_vertex_input_state_create_info{},
+		vk::pipeline_depth_stencil_state_create_info {
+			.enable_depth_test = true,
+			.enable_depth_write = true,
+			.depth_compare_op = vk::compare_op::less_or_equal
+		},
+		vk::pipeline_multisample_state_create_info {},
+		vk::pipeline_vertex_input_state_create_info {},
 		vk::pipeline_rasterization_state_create_info {
 			vk::polygon_mode::fill,
 			vk::cull_mode::back,
@@ -635,6 +670,11 @@ int main() {
 				digits_and_letters_frag_shader_module,
 				vk::entrypoint_name { "main" }
 			}
+		},
+		vk::pipeline_depth_stencil_state_create_info {
+			.enable_depth_test = true,
+			.enable_depth_write = true,
+			.depth_compare_op = vk::compare_op::less_or_equal
 		},
 		vk::pipeline_multisample_state_create_info{},
 		vk::pipeline_vertex_input_state_create_info{},
@@ -694,8 +734,8 @@ int main() {
 		);
 		vk::cmd_pipeline_barrier(
 			instance, device, change_layout_command_buffer,
-			vk::src_stages{ vk::pipeline_stage::all_commands },
-			vk::dst_stages{ vk::pipeline_stage::all_commands },
+			vk::src_stages { vk::pipeline_stage::all_commands },
+			vk::dst_stages { vk::pipeline_stage::all_commands },
 			array{ vk::image_memory_barrier {
 				.src_access = { vk::access::host_write },
 				.dst_access = { vk::access::shader_read },
@@ -715,6 +755,11 @@ int main() {
 			vk::buffer_usage::transfer_dst,
 			vk::buffer_usage::uniform_buffer
 		}
+	);
+	vk::debug_utils::set_object_name(
+		instance, device,
+		tile_uniform_buffer,
+		vk::debug_utils::object_name { "tile uniform buffer" }
 	);
 	on_scope_exit destroy_tile_uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, tile_uniform_buffer);
@@ -739,6 +784,11 @@ int main() {
 			vk::buffer_usage::transfer_dst,
 			vk::buffer_usage::uniform_buffer
 		}
+	);
+	vk::debug_utils::set_object_name(
+		instance, device,
+		digits_and_letters_uniform_buffer,
+		vk::debug_utils::object_name { "digits and letters uniform buffer" }
 	);
 	on_scope_exit destroy_digits_and_letters__uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, digits_and_letters_uniform_buffer);
@@ -822,7 +872,7 @@ int main() {
 	print::out.flush();
 
 	while(!window->should_close()) {
-		auto window_size = window->get_size();
+		math::vector<int, 2> window_size = window->get_size();
 
 		handle<vk::swapchain> prev_swapchain = swapchain;
 
@@ -900,15 +950,102 @@ int main() {
 			}
 			print::out("image views freed\n");
 		};
-
 		print::out("image views created\n");
 
+		handle<vk::image> depth_images_raw[swapchain_images_count];
+		span depth_images { depth_images_raw, swapchain_images_count };
+
+		for(nuint i = 0; i < swapchain_images_count; ++i) {
+			depth_images[i] = vk::create_image(instance, device,
+				vk::image_type::two_d,
+				vk::format::d32_sfloat,
+				vk::extent<3> { extent, 1 },
+				vk::image_tiling::optimal,
+				vk::image_usages { vk::image_usage::depth_stencil_attachment }
+			);
+		}
+		on_scope_exit destroy_depth_images { [&] {
+			for(handle<vk::image> depth_image : depth_images) {
+				vk::destroy_image(instance, device, depth_image);
+			}
+			print::out("depth images destroyed\n");
+		}};
+		print::out("depth images created\n");
+
+		vk::memory_requirements depth_image_memory_requirements
+			= vk::get_image_memory_requirements(
+				instance, device, depth_images[0]
+			);
+
+		handle<vk::device_memory> depth_images_memory = vk::allocate_memory(
+			instance, device,
+			vk::memory_size {
+				number {
+					(uint64) depth_image_memory_requirements.size
+				}.align(
+					depth_image_memory_requirements.alignment
+				) * swapchain_images_count
+			},
+			vk::find_first_memory_type_index(
+				instance, physical_device,
+				vk::memory_properties {
+					vk::memory_property::host_visible,
+					vk::memory_property::device_local
+				},
+				depth_image_memory_requirements.memory_type_indices
+			)
+		);
+		on_scope_exit destroy_depth_images_memory { [&] {
+			vk::free_memory(instance, device, depth_images_memory);
+			print::out("memory for depth images is freed\n");
+		}};
+		print::out("memory for depth images is allocated\n");
+
+		for(nuint i = 0; i < swapchain_images_count; ++i) {
+			vk::bind_image_memory(
+				instance, device, depth_images[i],
+				depth_images_memory,
+				vk::memory_offset {
+					i * number {
+						(uint64) depth_image_memory_requirements.size
+					}.align(
+						depth_image_memory_requirements.alignment
+					)
+				}
+			);
+		}
+
+		handle<vk::image_view> depth_image_views_raw[swapchain_images_count];
+		span depth_image_views {
+			depth_image_views_raw, swapchain_images_count
+		};
+
+		for(nuint i = 0; i < swapchain_images_count; ++i) {
+			depth_image_views[i] = vk::create_image_view(instance, device,
+				depth_images[i], vk::format::d32_sfloat,
+				vk::image_view_type::two_d,
+				vk::image_subresource_range {
+					vk::image_aspects { vk::image_aspect::depth }
+				}
+			);
+		}
+		on_scope_exit destroy_depth_image_views { [&] {
+			for(handle<vk::image_view> depth_image_view : depth_image_views) {
+				vk::destroy_image_view(instance, device, depth_image_view);
+			}
+			print::out("depth image views destroyed\n");
+		}};
+		print::out("depth image views created\n");
+
 		handle<vk::framebuffer> framebuffers_raw[swapchain_images_count];
-		span framebuffers{ framebuffers_raw, swapchain_images_count };
+		span framebuffers { framebuffers_raw, swapchain_images_count };
 		for(nuint i = 0; i < swapchain_images_count; ++i) {
 			framebuffers[i] = vk::create_framebuffer(
 				instance, device, tile_render_pass,
-				array { image_views[i] },
+				array {
+					depth_image_views[i],
+					image_views[i]
+				},
 				vk::extent<3> { extent, 1 }
 			);
 		}
@@ -1127,7 +1264,7 @@ int main() {
 						extent_f / 2.0F +
 						((p + 0.5F) / float(table_rows) - 0.5) * table_size;
 
-					float z = 0.0F;//1.0 - float(movement_distance) / 100.0F;
+					float z = 0.9 - float(movement_distance) / 100.0F;
 
 					positions_list.emplace_back(
 						math::vector<float, 3> {
@@ -1186,11 +1323,28 @@ int main() {
 				},
 				(void*) positions_raw
 			);
+			vk::cmd_pipeline_barrier(instance, device, command_buffer,
+				vk::src_stages { vk::pipeline_stage::transfer },
+				vk::dst_stages { vk::pipeline_stage::vertex_shader },
+				array {
+					vk::memory_barrier {
+						vk::src_access { vk::access::memory_write },
+						vk::dst_access { vk::access::uniform_read }
+					}
+				}
+			);
 			vk::cmd_begin_render_pass(instance, device, command_buffer,
 				tile_render_pass,
 				framebuffers[image_index],
 				vk::render_area { extent },
-				vk::clear_value { vk::clear_color_value{} }
+				array {
+					vk::clear_value { .depth_stencil =
+						vk::clear_depth_stencil_value { .depth = 1.0F }
+					},
+					vk::clear_value {
+						vk::clear_color_value { 0.0F, 0.0F, 0.0F, 0.0F }
+					}
+				}
 			);
 			vk::cmd_bind_pipeline(instance, device, command_buffer,
 				tile_pipeline, vk::pipeline_bind_point::graphics
@@ -1225,12 +1379,20 @@ int main() {
 				},
 				(void*) digits_and_letters_positions_raw
 			);
-
+			vk::cmd_pipeline_barrier(instance, device, command_buffer,
+				vk::src_stages { vk::pipeline_stage::transfer },
+				vk::dst_stages { vk::pipeline_stage::vertex_shader },
+				array {
+					vk::memory_barrier {
+						vk::src_access { vk::access::memory_write },
+						vk::dst_access { vk::access::uniform_read }
+					}
+				}
+			);
 			vk::cmd_begin_render_pass(instance, device, command_buffer,
 				digits_and_letters_render_pass,
 				framebuffers[image_index],
-				vk::render_area { extent },
-				vk::clear_value { vk::clear_color_value{} }
+				vk::render_area { extent }
 			);
 			vk::cmd_bind_pipeline(instance, device, command_buffer,
 				digits_and_letters_pipeline, vk::pipeline_bind_point::graphics
