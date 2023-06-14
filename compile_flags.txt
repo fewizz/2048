@@ -2,6 +2,7 @@
 -nostdinc++
 
 -I../core/include
+-I../encoding/include
 -I../math/include
 -I../windows-wrapper/include
 -I../posix-wrapper/include

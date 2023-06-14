@@ -28,7 +28,7 @@ static enum class game_state_t {
 } game_state = game_state_t::waiting_input;
 
 posix::seconds_and_nanoseconds animation_begin_time{};
-static constexpr nuint animation_ms = 1000;
+static constexpr nuint animation_ms = 100;
 table_t prev_table{};
 movement_table_t movement_table;
 
@@ -45,10 +45,12 @@ int main() {
 
 	if(!glfw_instance.is_vulkan_supported()) {
 		print::err("vulkan isn't supported\n");
+		return 1;
 	}
 
 	init_glfw_window();
-		window->set_key_callback(
+
+	window->set_key_callback(
 		+[](
 			glfw::window*, glfw::key::code key, int,
 			glfw::key::action action, glfw::key::modifiers
@@ -92,8 +94,8 @@ int main() {
 		ranges {
 			glfw_instance.get_required_instance_extensions(),
 			array {
-				vk::extension_name { "VK_EXT_debug_report" },
-				vk::extension_name { "VK_EXT_debug_utils" }
+				vk::extension_name { u8"VK_EXT_debug_report" },
+				vk::extension_name { u8"VK_EXT_debug_utils" }
 			}
 		}.concat_view().view_copied_elements_on_stack(
 			[](span<vk::extension_name> extensions_names) {
@@ -102,15 +104,16 @@ int main() {
 						vk::api_version { vk::major { 1 }, vk::minor { 0 } }
 					},
 					extensions_names,
-					array{ vk::layer_name { "VK_LAYER_KHRONOS_validation" } }
+					array{ vk::layer_name { u8"VK_LAYER_KHRONOS_validation" } }
 				);
 			}
 		);
 	on_scope_exit destroy_instance = [&] {
 		vk::destroy_instance(instance);
+		print::out("instance is destroyed\n");
 	};
 
-	print::out("instance created\n");
+	print::out("instance is created\n");
 
 	handle<vk::debug_report_callback> debug_report_callback
 		= vk::create_debug_report_callback(
@@ -126,8 +129,8 @@ int main() {
 				[[maybe_unused]] uint64 object,
 				[[maybe_unused]] nuint location,
 				[[maybe_unused]] int32 message_code,
-				[[maybe_unused]] c_string_of_unknown_size layer_prefix,
-				c_string_of_unknown_size message,
+				[[maybe_unused]] c_string_of_unknown_size<utf8::unit> l_prefix,
+				c_string_of_unknown_size<utf8::unit> message,
 				[[maybe_unused]] void* user_data
 			) -> uint32 {
 				print::out("[vk] ", c_string { message }.sized(), "\n");
@@ -144,14 +147,15 @@ int main() {
 	vk::physical_device_properties physical_device_props
 		= vk::get_physical_device_properties(instance, physical_device);
 
-	print::out("physical device selected: ", physical_device_props.name, "\n");
+	print::out("selected physical device: ", physical_device_props.name, "\n");
 
 	handle<vk::surface> surface = window->create_surface(instance);
 	on_scope_exit destroy_surface = [&] {
 		vk::destroy_surface(instance, surface);
+		print::out("surface is destroyed\n");
 	};
 
-	print::out("surface created\n");
+	print::out("surface is created\n");
 
 	vk::surface_format surface_format;
 
@@ -168,7 +172,7 @@ int main() {
 		}
 	);
 
-	print::out("surface format selected\n");
+	print::out("surface format is selected\n");
 
 	vk::queue_family_index queue_family_index = vk::queue_family_ignored;
 
@@ -194,7 +198,7 @@ int main() {
 		}
 	);
 
-	print::out("queue family index selected\n");
+	print::out("queue family index is selected\n");
 
 	array queue_priorities { vk::queue_priority { 1.0F } };
 
@@ -205,18 +209,19 @@ int main() {
 			vk::queue_count { 1 },
 			queue_priorities
 		}},
-		array { vk::extension_name { "VK_KHR_swapchain" } }
+		array { vk::extension_name { u8"VK_KHR_swapchain" } }
 	);
 	vk::debug_utils::set_object_name(
 		instance, device,
 		device,
-		vk::debug_utils::object_name { "device" }
+		vk::debug_utils::object_name { u8"device" }
 	);
 	on_scope_exit destroy_device = [&] {
 		vk::destroy_device(instance, device);
+		print::out("device is destroyed\n");
 	};
 
-	print::out("device created\n");
+	print::out("device is created\n");
 
 	png_data digits_and_letters_image_data =
 		read_png(c_string { "digits_and_letters.png" });
@@ -237,9 +242,10 @@ int main() {
 	);
 	on_scope_exit destroy_digits_and_letters_image = [&] {
 		vk::destroy_image(instance, device, digits_and_letters_image);
+		print::out("\"digits_and_letters.png\" image is destroyed\n");
 	};
 
-	print::out("\"digits_and_letters.png\" image created\n");
+	print::out("\"digits_and_letters.png\" image is created\n");
 
 	vk::memory_requirements digits_and_letters_memory_requirements
 		= vk::get_image_memory_requirements(
@@ -263,6 +269,7 @@ int main() {
 	);
 	on_scope_exit destroy_digits_and_letters_memory = [&] {
 		vk::free_memory(instance, device, digits_and_letters_memory);
+		print::out("memory for \"digits_and_letters.png\" is freed\n");
 	};
 
 	print::out("memory for \"digits_and_letters.png\" is allocated\n");
@@ -305,6 +312,9 @@ int main() {
 		);
 	on_scope_exit destroy_digits_and_letters_image_view = [&] {
 		vk::destroy_image_view(instance, device, digits_and_letters_image_view);
+		print::out(
+			"image view for \"digits_and_letters.png\" image is destroyed\n"
+		);
 	};
 
 	print::out("image view for \"digits_and_letters.png\" image is created\n");
@@ -320,6 +330,9 @@ int main() {
 	);
 	on_scope_exit destroy_digits_and_letters_sampler = [&] {
 		vk::destroy_sampler(instance, device, digits_and_letters_sampler);
+		print::out(
+			"sampler for \"digits_and_letters.png\" image is destroyed\n"
+		);
 	};
 
 	print::out("sampler for \"digits_and_letters.png\" image is created\n");
@@ -341,9 +354,10 @@ int main() {
 		);
 	on_scope_exit destroy_descriptor_pool = [&] {
 		vk::destroy_descriptor_pool(instance, device, descriptor_pool);
+		print::out("descriptor pool is destroyed\n");
 	};
 
-	print::out("descriptor pool created\n");
+	print::out("descriptor pool is created\n");
 
 	handle<vk::descriptor_set_layout> tile_descriptor_set_layout
 		= vk::create_descriptor_set_layout(
@@ -362,7 +376,9 @@ int main() {
 		vk::destroy_descriptor_set_layout(
 			instance, device, tile_descriptor_set_layout
 		);
+		print::out("\"tile\" descriptor set layout is destroyed\n");
 	};
+	print::out("\"tile\" descriptor set layout is created\n");
 
 	handle<vk::descriptor_set_layout> digits_and_letters_descriptor_set_layout
 		= vk::create_descriptor_set_layout(
@@ -391,9 +407,11 @@ int main() {
 		vk::destroy_descriptor_set_layout(
 			instance, device, digits_and_letters_descriptor_set_layout
 		);
+		print::out(
+			"\"digits_and_letters\" descriptor set layout is destroyed\n"
+		);
 	};
-
-	print::out("descriptor set layouts created\n");
+	print::out("\"digits_and_letters\" descriptor set layout is created\n");
 
 	handle<vk::descriptor_set> tile_descriptor_set
 		= vk::allocate_descriptor_set(
@@ -406,7 +424,7 @@ int main() {
 			digits_and_letters_descriptor_set_layout
 		);
 
-	print::out("descriptor sets allocated\n");
+	print::out("descriptor sets are allocated\n");
 
 	array depth_attachment_references {
 		vk::depth_stencil_attachment_reference {
@@ -452,11 +470,13 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		tile_render_pass,
-		vk::debug_utils::object_name { "tile render pass" }
+		vk::debug_utils::object_name { u8"\"tile\" render pass" }
 	);
 	on_scope_exit destroy_tile_render_pass = [&] {
 		vk::destroy_render_pass(instance, device, tile_render_pass);
+		print::out("\"tile\" render pass is destroyed\n");
 	};
+	print::out("\"tile\" render pass is created\n");
 
 	handle<vk::render_pass> digits_and_letters_render_pass
 		= vk::create_render_pass(
@@ -493,31 +513,32 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		digits_and_letters_render_pass,
-		vk::debug_utils::object_name { "digits and letters render pass" }
+		vk::debug_utils::object_name { u8"\"digits and letters\" render pass" }
 	);
 	on_scope_exit destroy_digits_and_letters_render_pass = [&] {
 		vk::destroy_render_pass(
 			instance, device, digits_and_letters_render_pass
 		);
+		print::out("\"digits and letters\" render pass is destroyed\n");
 	};
-
-	print::out("render passes created\n");
+	print::out("\"digits and letters\" render pass is created\n");
 
 	handle<vk::shader_module> tile_vert_shader_module
 		= read_shader_module(instance, device, c_string{ "tile.vert.spv" });
 	on_scope_exit destroy_tile_vert_shader_module = [&] {
 		vk::destroy_shader_module(instance, device, tile_vert_shader_module);
+		print::out("\"tile.vert\" shader module is destroyed\n");
 	};
 
-	print::out("tile.vert shader module created\n");
+	print::out("\"tile.vert\" shader module is created\n");
 
 	handle<vk::shader_module> tile_frag_shader_module
 		= read_shader_module(instance, device, c_string{ "tile.frag.spv" });
 	on_scope_exit destroy_tile_frag_shader_module = [&] {
 		vk::destroy_shader_module(instance, device, tile_frag_shader_module);
+		print::out("\"tile.frag\" shader module is destroyed\n");
 	};
-
-	print::out("tile.frag shader module created\n");
+	print::out("\"tile.frag\" shader module is created\n");
 
 	handle<vk::shader_module> digits_and_letters_vert_shader_module
 		= read_shader_module(
@@ -527,9 +548,10 @@ int main() {
 		vk::destroy_shader_module(
 			instance, device, digits_and_letters_vert_shader_module
 		);
+		print::out("\"digits_and_letters.vert\" shader module is destroyed\n");
 	};
 
-	print::out("digits_and_letters.vert shader module created\n");
+	print::out("\"digits_and_letters.vert\" shader module is created\n");
 
 	handle<vk::shader_module> digits_and_letters_frag_shader_module
 		= read_shader_module(
@@ -539,11 +561,12 @@ int main() {
 		vk::destroy_shader_module(
 			instance, device, digits_and_letters_frag_shader_module
 		);
+		print::out("\"digits_and_letters.frag\" shader module is destroyed\n");
 	};
 
-	print::out("digits_and_letters.frag shader module created\n");
+	print::out("\"digits_and_letters.frag\" shader module is created\n");
 
-	handle<vk::pipeline_layout> tiles_pipeline_layout
+	handle<vk::pipeline_layout> tile_pipeline_layout
 		= vk::create_pipeline_layout(
 			instance, device,
 			array { tile_descriptor_set_layout },
@@ -556,10 +579,11 @@ int main() {
 				}
 			}
 		);
-
 	on_scope_exit destroy_tile_pipeline_layout = [&] {
-		vk::destroy_pipeline_layout(instance, device, tiles_pipeline_layout);
+		vk::destroy_pipeline_layout(instance, device, tile_pipeline_layout);
+		print::out("\"tile\" pipeline layout is destroyed\n");
 	};
+	print::out("\"tile\" pipeline layout is created\n");
 
 	handle<vk::pipeline_layout> digits_and_letters_pipeline_layout
 		= vk::create_pipeline_layout(
@@ -574,14 +598,13 @@ int main() {
 				}
 			}
 		);
-
 	on_scope_exit destroy_digits_and_letters_pipeline_layout = [&] {
 		vk::destroy_pipeline_layout(
 			instance, device, digits_and_letters_pipeline_layout
 		);
+		print::out("\"digits_and_letters\" pipeline layout is destroyed\n");
 	};
-
-	print::out("pipeline layout created\n");
+	print::out("\"digits_and_letters\" pipeline layout is created\n");
 
 	vk::pipeline_color_blend_attachment_state tile_pcbas {
 		vk::enable_blend { false }
@@ -600,7 +623,7 @@ int main() {
 
 	handle<vk::pipeline> tile_pipeline = vk::create_graphics_pipelines(
 		instance, device,
-		tiles_pipeline_layout, tile_render_pass, vk::subpass { 0 },
+		tile_pipeline_layout, tile_render_pass, vk::subpass { 0 },
 		vk::pipeline_input_assembly_state_create_info {
 			.topology = vk::primitive_topology::triangle_list
 		},
@@ -608,12 +631,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				tile_vert_shader_module,
-				vk::entrypoint_name { "main" }
+				vk::entrypoint_name { u8"main" }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				tile_frag_shader_module,
-				vk::entrypoint_name { "main" }
+				vk::entrypoint_name { u8"main" }
 			}
 		},
 		vk::pipeline_depth_stencil_state_create_info {
@@ -639,7 +662,9 @@ int main() {
 	);
 	on_scope_exit destroy_tile_pipeline = [&] {
 		vk::destroy_pipeline(instance, device, tile_pipeline);
+		print::out("\"tile\" pipeline is destroyed\n");
 	};
+	print::out("\"tile\" pipeline is created\n");
 
 	vk::pipeline_color_blend_attachment_state digits_and_letters_pcbas {
 		vk::enable_blend { true },
@@ -663,12 +688,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				digits_and_letters_vert_shader_module,
-				vk::entrypoint_name { "main" }
+				vk::entrypoint_name { u8"main" }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				digits_and_letters_frag_shader_module,
-				vk::entrypoint_name { "main" }
+				vk::entrypoint_name { u8"main" }
 			}
 		},
 		vk::pipeline_depth_stencil_state_create_info {
@@ -694,9 +719,9 @@ int main() {
 	);
 	on_scope_exit destroy_digits_and_letters_pipeline = [&] {
 		vk::destroy_pipeline(instance, device, digits_and_letters_pipeline);
+		print::out("\"digits_and_letters\" pipeline is destroyed\n");
 	};
-
-	print::out("pipelines created\n");
+	print::out("\"digits_and_letters\" pipeline is created\n");
 
 	handle<vk::command_pool> command_pool = vk::create_command_pool(
 		instance, device,
@@ -709,7 +734,7 @@ int main() {
 		vk::destroy_command_pool(instance, device, command_pool);
 	};
 
-	print::out("command pool created\n");
+	print::out("command pool is created\n");
 
 	handle<vk::queue> queue = vk::get_device_queue(
 		instance, device,
@@ -759,7 +784,7 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		tile_uniform_buffer,
-		vk::debug_utils::object_name { "tile uniform buffer" }
+		vk::debug_utils::object_name { u8"\"tile\" uniform buffer" }
 	);
 	on_scope_exit destroy_tile_uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, tile_uniform_buffer);
@@ -788,7 +813,9 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		digits_and_letters_uniform_buffer,
-		vk::debug_utils::object_name { "digits and letters uniform buffer" }
+		vk::debug_utils::object_name {
+			u8"\"digits and letters\" uniform buffer"
+		}
 	);
 	on_scope_exit destroy_digits_and_letters__uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, digits_and_letters_uniform_buffer);
@@ -859,44 +886,38 @@ int main() {
 		}
 	);
 
-	print::out("descriptor sets updated\n");
+	print::out("descriptor sets are updated\n");
 
 	handle<vk::swapchain> swapchain{};
 	on_scope_exit destroy_swapchain = [&] {
 		if(swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, swapchain);
 		}
-		print::out("swapchain destroyed\n");
+		print::out("swapchain is destroyed\n");
 	};
 
 	print::out.flush();
 
 	while(!window->should_close()) {
-		math::vector<int, 2> window_size = window->get_size();
-
 		handle<vk::swapchain> prev_swapchain = swapchain;
 
 		vk::surface_capabilities surface_caps =
-		vk::get_physical_device_surface_capabilities(
-			instance, physical_device, surface
-		);
+			vk::get_physical_device_surface_capabilities(
+				instance, physical_device, surface
+			);
 
 		vk::extent<2> extent = surface_caps.current_extent;
 
-		if(extent.width() == unsigned(-1) && extent.height() == unsigned(-1)) {
-			extent.width() = number { window_size[0] }.clamp(
-				surface_caps.min_image_extent.width(),
-				surface_caps.max_image_extent.width()
-			);
-			extent.height() = number { window_size[1] }.clamp(
-				surface_caps.min_image_extent.height(),
-				surface_caps.max_image_extent.height()
+		if(extent == 0u) { // on windows, window is minimised. TODO
+			glfw_instance.poll_events();
+			continue;
+		}
+		if(extent == unsigned(-1)) { // on linux, TODO
+			extent = extent.clamp(
+				surface_caps.min_image_extent,
+				surface_caps.max_image_extent
 			);
 		}
-		window_size = math::vector {
-			(int) extent.width(),
-			(int) extent.height()
-		};
 
 		swapchain = vk::create_swapchain(
 			instance, device, surface,
@@ -921,7 +942,7 @@ int main() {
 			swapchain
 		);
 
-		print::out("swapchain (re)created\n");
+		print::out("swapchain is (re)created\n");
 
 		if(prev_swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, prev_swapchain);
@@ -948,9 +969,9 @@ int main() {
 			for(handle<vk::image_view> image_view : image_views) {
 				vk::destroy_image_view(instance, device, image_view);
 			}
-			print::out("image views freed\n");
+			print::out("swapchain's image views are freed\n");
 		};
-		print::out("image views created\n");
+		print::out("swapchain's image views are created\n");
 
 		handle<vk::image> depth_images_raw[swapchain_images_count];
 		span depth_images { depth_images_raw, swapchain_images_count };
@@ -968,9 +989,9 @@ int main() {
 			for(handle<vk::image> depth_image : depth_images) {
 				vk::destroy_image(instance, device, depth_image);
 			}
-			print::out("depth images destroyed\n");
+			print::out("depth images are destroyed\n");
 		}};
-		print::out("depth images created\n");
+		print::out("depth images are created\n");
 
 		vk::memory_requirements depth_image_memory_requirements
 			= vk::get_image_memory_requirements(
@@ -1033,9 +1054,9 @@ int main() {
 			for(handle<vk::image_view> depth_image_view : depth_image_views) {
 				vk::destroy_image_view(instance, device, depth_image_view);
 			}
-			print::out("depth image views destroyed\n");
+			print::out("depth image views are destroyed\n");
 		}};
-		print::out("depth image views created\n");
+		print::out("depth image views are created\n");
 
 		handle<vk::framebuffer> framebuffers_raw[swapchain_images_count];
 		span framebuffers { framebuffers_raw, swapchain_images_count };
@@ -1053,10 +1074,10 @@ int main() {
 			for(handle<vk::framebuffer> framebuffer : framebuffers) {
 				vk::destroy_framebuffer(instance, device, framebuffer);
 			}
-			print::out("framebuffers freed\n");
+			print::out("framebuffers are freed\n");
 		};
 
-		print::out("framebuffers created\n");
+		print::out("framebuffers are created\n");
 
 		handle<vk::command_buffer> command_buffers_raw[swapchain_images_count];
 		span command_buffers{ command_buffers_raw, swapchain_images_count };
@@ -1069,10 +1090,10 @@ int main() {
 			vk::free_command_buffers(
 				instance, device, command_pool, command_buffers
 			);
-			print::out("command buffers freed\n");
+			print::out("command buffers are freed\n");
 		};
 
-		print::out("command buffers allocated\n");
+		print::out("command buffers are allocated\n");
 
 		handle<vk::fence> fences_raw[swapchain_images_count];
 		span fences{ fences_raw, swapchain_images_count };
@@ -1083,30 +1104,30 @@ int main() {
 			for(handle<vk::fence> fence : fences) {
 				vk::destroy_fence(instance, device, fence);
 			}
-			print::out("fences destroyed\n");
+			print::out("fences are destroyed\n");
 		};
 
-		print::out("fences created\n");
+		print::out("fences are created\n");
 
 		handle<vk::semaphore> acquire_semaphore = vk::create_semaphore(
 			instance, device
 		);
 		on_scope_exit destroy_acquire_semaphore = [&] {
 			vk::destroy_semaphore(instance, device, acquire_semaphore);
-			print::out("acquire semaphore destroyed\n");
+			print::out("acquire semaphore is destroyed\n");
 		};
 
-		print::out("acquire semaphore created\n");
+		print::out("acquire semaphore is created\n");
 
 		handle<vk::semaphore> submit_semaphore = vk::create_semaphore(
 			instance, device
 		);
 		on_scope_exit destroy_submit_semaphore = [&] {
 			vk::destroy_semaphore(instance, device, submit_semaphore);
-			print::out("submit semaphore destroyed\n");
+			print::out("submit semaphore is destroyed\n");
 		};
 
-		print::out("submit semaphore created\n");
+		print::out("submit semaphore is created\n");
 
 		handle<vk::fence> submit_fence = vk::create_fence(
 			instance, device,
@@ -1115,10 +1136,10 @@ int main() {
 
 		on_scope_exit destroy_submit_fence = [&] {
 			vk::destroy_fence(instance, device, submit_fence);
-			print::out("submit fence destroyed\n");
+			print::out("submit fence is destroyed\n");
 		};
 
-		print::out("submit fence created\n");
+		print::out("submit fence is created\n");
 
 		print::out.flush();
 
@@ -1151,7 +1172,6 @@ int main() {
 			auto should_update_swapchain = [&](vk::result result) {
 				if(result.success()) return false;
 				if(result.suboptimal() || result.out_of_date()) return true;
-
 				posix::abort();
 			};
 
@@ -1196,11 +1216,13 @@ int main() {
 				{}
 			};
 
-			tile_position_and_size_t positions_raw[65536 / 32];
+			tile_position_and_size_t positions_raw[
+				65536 / sizeof(tile_position_and_size_t)
+			];
 			list positions_list {
 				span {
 					(storage<tile_position_and_size_t>*) positions_raw,
-					table_rows * table_rows
+					table_rows * table_rows * 2
 				}
 			};
 
@@ -1223,13 +1245,13 @@ int main() {
 			};
 
 			positions_and_letters_t digits_and_letters_positions_raw[
-				65536 / 32
+				65536 / sizeof(positions_and_letters_t)
 			];
 			list digits_and_letters_positions_list {
 				span {
 					(storage<positions_and_letters_t>*)
 					digits_and_letters_positions_raw,
-					nuint(65536 / 32)
+					nuint(65536 / sizeof(positions_and_letters_t))
 				}
 			};
 
@@ -1237,11 +1259,13 @@ int main() {
 				(float) extent[0], (float) extent[1]
 			};
 
-			float table_size = numbers {
+			float table_size =
+				numbers {
 					extent_f[0], extent_f[1]
 				}.min() / 1.1F;
 
 			float tile_size = table_size / float(table_rows) / 1.1F;
+
 			auto& current_tiles =
 				game_state == game_state_t::animating ?
 				prev_table.tiles :
@@ -1254,27 +1278,41 @@ int main() {
 						= movement.get_same_as<direction_t>();
 					nuint movement_distance = movement.get_same_as<nuint>();
 
-					math::vector p
-						= math::vector { float(x), float(y) } +
-						  math::vector {
+					math::vector p0
+						= math::vector { float(x), float(y) };
+
+					math::vector p1 = p0 +
+						math::vector {
 							movement_direction.x, movement_direction.y
 						} * t * float(movement_distance);
 
-					math::vector tile_position =
+					math::vector tile_position_0 =
 						extent_f / 2.0F +
-						((p + 0.5F) / float(table_rows) - 0.5) * table_size;
+						((p0 + 0.5F) / float(table_rows) - 0.5) * table_size;
+
+					math::vector tile_position_1 =
+						extent_f / 2.0F +
+						((p1 + 0.5F) / float(table_rows) - 0.5) * table_size;
 
 					float z = 0.9 - float(movement_distance) / 100.0F;
 
 					positions_list.emplace_back(
 						math::vector<float, 3> {
-							tile_position[0], tile_position[1], z
+							tile_position_0[0], tile_position_0[1], 1.0F
+						},
+						tile_size,
+						0
+					);
+
+					if(current_tiles[y][x] == 0) continue;
+
+					positions_list.emplace_back(
+						math::vector<float, 3> {
+							tile_position_1[0], tile_position_1[1], z
 						},
 						tile_size,
 						current_tiles[y][x]
 					);
-
-					if(current_tiles[y][x] == 0) continue;
 
 					nuint digits_count = 0;
 					number { current_tiles[y][x] }.for_each_digit(
@@ -1288,15 +1326,11 @@ int main() {
 						number_base { 10 },
 						[&] (nuint digit) {
 
-							float full_digit_width
-								= tile_size / 3.0F;
-								//= tile_size;
-							float digit_width
-								= full_digit_width;
-								//= full_digit_width / float(digits_count);
+							float full_digit_width = tile_size / 3.0F;
+							float digit_width = full_digit_width;
 
 							math::vector digit_position =
-								tile_position + math::vector {
+								tile_position_1 + math::vector {
 									full_digit_width * (
 										- float(digits_count) / 2.0F +
 										(0.5F + digit_index)
@@ -1319,7 +1353,7 @@ int main() {
 
 			vk::cmd_update_buffer(instance, device, command_buffer,
 				tile_uniform_buffer, vk::memory_size {
-					32 * positions_list.size()
+					positions_list.size() * sizeof(tile_position_and_size_t)
 				},
 				(void*) positions_raw
 			);
@@ -1351,7 +1385,7 @@ int main() {
 			);
 			vk::cmd_bind_descriptor_sets(instance, device, command_buffer,
 				vk::pipeline_bind_point::graphics,
-				tiles_pipeline_layout,
+				tile_pipeline_layout,
 				array { tile_descriptor_set }
 			);
 			vk::cmd_set_scissor(instance, device, command_buffer, extent);
@@ -1359,7 +1393,7 @@ int main() {
 
 			vk::cmd_push_constants(
 				instance, device, command_buffer,
-				tiles_pipeline_layout,
+				tile_pipeline_layout,
 				vk::push_constant_range {
 					vk::shader_stages {
 						vk::shader_stage::vertex
@@ -1369,13 +1403,14 @@ int main() {
 				(void*) &extent
 			);
 			vk::cmd_draw(instance, device, command_buffer,
-				vk::vertex_count { 3 * 2 * table_rows * table_rows }
+				vk::vertex_count { 3 * 2 * (uint32) positions_list.size() }
 			);
 			vk::cmd_end_render_pass(instance, device, command_buffer);
 
 			vk::cmd_update_buffer(instance, device, command_buffer,
 				digits_and_letters_uniform_buffer, vk::memory_size {
-					32 * digits_and_letters_positions_list.size()
+					sizeof(positions_and_letters_t) *
+					digits_and_letters_positions_list.size()
 				},
 				(void*) digits_and_letters_positions_raw
 			);
@@ -1406,7 +1441,7 @@ int main() {
 			vk::cmd_set_viewport(instance, device, command_buffer, extent);
 			vk::cmd_draw(instance, device, command_buffer,
 				vk::vertex_count {
-					(uint32) digits_and_letters_positions_list.size() * 6
+					(uint32) digits_and_letters_positions_list.size() * 3 * 2
 				}
 			);
 			vk::cmd_end_render_pass(instance, device, command_buffer);

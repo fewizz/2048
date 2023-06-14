@@ -8,7 +8,7 @@
 #include <c_string.hpp>
 
 struct png_data {
-	posix::memory_for_range_of<uint8> bytes;
+	posix::memory<uint8> bytes;
 	uint32 width;
 	uint32 height;
 };
@@ -26,7 +26,7 @@ png_data read_png(any_c_string auto path) {
 		abort();
 	}
 
-	posix::memory_for_range_of<uint8> file = read_file(path);
+	posix::memory<uint8> file = read_file(path);
 
 	png_image image {
 		.version = PNG_IMAGE_VERSION
@@ -46,8 +46,7 @@ png_data read_png(any_c_string auto path) {
 	image.format = PNG_FORMAT_GRAY;
 
 	auto size = PNG_IMAGE_SIZE(image);
-	posix::memory_for_range_of<uint8> buffer
-		= posix::allocate_memory_for<uint8>(size);
+	posix::memory<uint8> buffer = posix::allocate<uint8>(size);
 
 	if(!png_image_finish_read(&image, nullptr, buffer.iterator(), 0, 0)) {
 		posix::abort();

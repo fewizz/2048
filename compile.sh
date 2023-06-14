@@ -39,6 +39,7 @@ clang++ \
 	-Wextra \
 	-g \
 	-I ${root}/../core/include \
+	-I ${root}/../encoding/include \
 	-I ${root}/../math/include \
 	-I ${root}/../posix-wrapper/include \
 	-I ${root}/../windows-wrapper/include \

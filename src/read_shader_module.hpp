@@ -8,7 +8,7 @@ handle<vk::shader_module> read_shader_module(
 	handle<vk::device> device,
 	any_c_string auto path
 ) {
-	posix::memory_for_range_of<uint8> data = read_file(path);
+	posix::memory<uint8> data = read_file(path);
 
 	handle<vk::shader_module> tile_frag_shader_module =
 		vk::create_shader_module(

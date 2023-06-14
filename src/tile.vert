@@ -11,7 +11,7 @@ struct tile_position_and_size_t {
 };
 
 layout(binding = 0) uniform tile_positions_t {
-	tile_position_and_size_t tiles[65536 / 16];
+	tile_position_and_size_t tiles[65536 / 32];
 };
 
 layout(location = 0) out vec2 coord_snorm;

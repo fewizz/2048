@@ -9,7 +9,7 @@ inline static body<glfw::window> window{};
 inline void init_glfw_window() {
 	glfw_instance.window_hint(glfw::client_api, glfw::no_api);
 	window = glfw_instance.create_window(
-		glfw::width { 640 }, glfw::height { 480 }, glfw::title { "2048" }
+		glfw::width { 640 }, glfw::height { 480 }, glfw::title { u8"2048" }
 	);
-	print::out("created window\n");
+	print::out("window is created\n");
 }
