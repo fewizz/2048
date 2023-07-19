@@ -157,20 +157,19 @@ int main() {
 
 	print::out("surface is created\n");
 
-	vk::surface_format surface_format;
-
-	vk::view_physical_device_surface_formats(
-		instance, physical_device, surface,
-		[&](span<vk::surface_format> formats) {
-			surface_format = formats[0];
-			if(
-				formats.size() == 1 &&
-				formats[0].format == vk::format::undefined
-			) {
-				surface_format.format = vk::format::b8_g8_r8_a8_unorm;
+	vk::surface_format surface_format =
+		vk::try_choose_physical_device_surface_format(
+			instance, physical_device, surface,
+			array {
+				vk::surface_format {
+					vk::format::r8_g8_b8_a8_srgb,
+					vk::color_space::srgb_nonlinear
+				}
 			}
-		}
-	);
+		).if_has_no_value([]() {
+			print::err("couldn't choose surface format");
+			posix::abort();
+		}).get();
 
 	print::out("surface format is selected\n");
 
@@ -180,7 +179,7 @@ int main() {
 		instance, physical_device,
 		[&](span<vk::queue_family_properties> props_span) {
 			props_span.for_each_indexed([&](auto props, uint32 index) {
-				bool graphics = props.flags.get(vk::queue_flag::graphics);
+				bool graphics = props.flags & vk::queue_flag::graphics;
 				bool supports_surface =
 					vk::get_physical_device_surface_support(
 						instance, physical_device,
@@ -912,7 +911,7 @@ int main() {
 			glfw_instance.poll_events();
 			continue;
 		}
-		if(extent == unsigned(-1)) { // on linux, TODO
+		if(extent == -1u) { // on linux, TODO
 			extent = extent.clamp(
 				surface_caps.min_image_extent,
 				surface_caps.max_image_extent
