@@ -1,7 +1,6 @@
 #include "./handlers.hpp"
 #include "./vk_functions.hpp"
 #include "./glfw.hpp"
-#include "./read_file.hpp"
 #include "./read_png.hpp"
 #include "./read_shader_module.hpp"
 #include "./table.hpp"
@@ -788,13 +787,17 @@ int main() {
 	on_scope_exit destroy_tile_uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, tile_uniform_buffer);
 	};
+	vk::memory_requirements tile_uniform_buffer_memory_requirements =
+		vk::get_memory_requirements(instance, device, tile_uniform_buffer);
 
 	handle<vk::device_memory> tile_uniform_buffer_memory = vk::allocate_memory(
-		instance, device, vk::memory_size { 65536 },
+		instance, device,
+		tile_uniform_buffer_memory_requirements.size,
 		vk::find_first_memory_type_index(
 			instance, physical_device, vk::memory_properties {
 				vk::memory_property::device_local
-			}
+			},
+			tile_uniform_buffer_memory_requirements.memory_type_indices
 		)
 	);
 	on_scope_exit free_tile_uniform_buffer_memory = [&] {
@@ -816,17 +819,25 @@ int main() {
 			u8"\"digits and letters\" uniform buffer"
 		}
 	);
-	on_scope_exit destroy_digits_and_letters__uniform_buffer = [&] {
+	on_scope_exit destroy_digits_and_letters_uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, digits_and_letters_uniform_buffer);
 	};
 
+	vk::memory_requirements digits_and_letters_uniform_buffer_mem_requirements
+		= vk::get_memory_requirements(
+			instance, device, digits_and_letters_uniform_buffer
+		);
+
 	handle<vk::device_memory> digits_and_letters_uniform_buffer_memory
 		= vk::allocate_memory(
-			instance, device, vk::memory_size { 65536 },
+			instance, device,
+			digits_and_letters_uniform_buffer_mem_requirements.size,
 			vk::find_first_memory_type_index(
 				instance, physical_device, vk::memory_properties {
 					vk::memory_property::device_local
-				}
+				},
+				digits_and_letters_uniform_buffer_mem_requirements
+					.memory_type_indices
 			)
 		);
 	on_scope_exit free_digits_and_letters_uniform_buffer_memory = [&] {
@@ -899,6 +910,7 @@ int main() {
 
 	while(!window->should_close()) {
 		handle<vk::swapchain> prev_swapchain = swapchain;
+		auto window_size = window->get_size().cast<uint32>();
 
 		vk::surface_capabilities surface_caps =
 			vk::get_physical_device_surface_capabilities(
@@ -911,7 +923,8 @@ int main() {
 			glfw_instance.poll_events();
 			continue;
 		}
-		if(extent == -1u) { // on linux, TODO
+		if(extent == -1u) { // on linux, wayland
+			extent = window_size;
 			extent = extent.clamp(
 				surface_caps.min_image_extent,
 				surface_caps.max_image_extent
@@ -921,10 +934,12 @@ int main() {
 		swapchain = vk::create_swapchain(
 			instance, device, surface,
 			vk::min_image_count {
-				number { 2u }.clamp(
-					surface_caps.min_image_count,
-					surface_caps.max_image_count
-				)
+				surface_caps.max_image_count != 0 ?
+					number { 2u }.clamp(
+						surface_caps.min_image_count,
+						surface_caps.max_image_count
+					) :
+					numbers { 2u, (uint32) surface_caps.min_image_count }.max()
 			},
 			extent,
 			surface_format.format,
@@ -1144,6 +1159,9 @@ int main() {
 
 		while(!window->should_close()) {
 			glfw_instance.poll_events();
+			if(window->get_size().cast<uint32>() != window_size) {
+				break;
+			}
 
 			float t = 1.0;
 
@@ -1178,6 +1196,7 @@ int main() {
 				acquire_result.is_unexpected() &&
 				should_update_swapchain(acquire_result.get_unexpected())
 			) {
+				print::out("swapchain is suboptimal or out of date\n");
 				break;
 			}
 
@@ -1450,6 +1469,9 @@ int main() {
 			vk::queue_submit(
 				instance, device, queue, command_buffer,
 				vk::wait_semaphore { acquire_semaphore },
+				vk::pipeline_stages {
+					vk::pipeline_stage::color_attachment_output
+				},
 				vk::signal_semaphore { submit_semaphore },
 				vk::signal_fence { submit_fence }
 			);
