@@ -278,7 +278,7 @@ int main() {
 			instance, device,
 			digits_and_letters_memory,
 			digits_and_letters_memory_requirements.size,
-			(void**) &mem_ptr
+			mem_ptr
 		);
 
 		digits_and_letters_image_data.bytes.as_span().copy_to(span {
@@ -1234,14 +1234,11 @@ int main() {
 				{}
 			};
 
-			tile_position_and_size_t positions_raw[
-				65536 / sizeof(tile_position_and_size_t)
-			];
 			list positions_list {
-				span {
-					(storage<tile_position_and_size_t>*) positions_raw,
+				array<
+					storage<tile_position_and_size_t>,
 					table_rows * table_rows * 2
-				}
+				>{}
 			};
 
 			struct positions_and_letters_t {
@@ -1262,15 +1259,11 @@ int main() {
 				{}
 			};
 
-			positions_and_letters_t digits_and_letters_positions_raw[
-				65536 / sizeof(positions_and_letters_t)
-			];
 			list digits_and_letters_positions_list {
-				span {
-					(storage<positions_and_letters_t>*)
-					digits_and_letters_positions_raw,
-					nuint(65536 / sizeof(positions_and_letters_t))
-				}
+				array<
+					storage<positions_and_letters_t>,
+					65536 / sizeof(positions_and_letters_t)
+				>{}
 			};
 
 			math::vector extent_f {
@@ -1373,7 +1366,7 @@ int main() {
 				tile_uniform_buffer, vk::memory_size {
 					positions_list.size() * sizeof(tile_position_and_size_t)
 				},
-				(void*) positions_raw
+				(void*) positions_list.iterator()
 			);
 			vk::cmd_pipeline_barrier(instance, device, command_buffer,
 				vk::src_stages { vk::pipeline_stage::transfer },
@@ -1430,7 +1423,7 @@ int main() {
 					sizeof(positions_and_letters_t) *
 					digits_and_letters_positions_list.size()
 				},
-				(void*) digits_and_letters_positions_raw
+				(void*) digits_and_letters_positions_list.iterator()
 			);
 			vk::cmd_pipeline_barrier(instance, device, command_buffer,
 				vk::src_stages { vk::pipeline_stage::transfer },
