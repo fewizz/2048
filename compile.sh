@@ -37,6 +37,7 @@ clang++ \
 	-nostdinc++ \
 	-Wall \
 	-Wextra \
+	-Wno-vla-cxx-extension \
 	-g \
 	-I ${root}/../core/include \
 	-I ${root}/../encoding/include \

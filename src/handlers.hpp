@@ -1,4 +1,5 @@
 #include <posix/unhandled.hpp>
+#include <posix/abort.hpp>
 #include <vk/__internal/unexpected_handler.hpp>
 #include <glfw/__internal/unexpected_handler.hpp>
 

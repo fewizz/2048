@@ -87,7 +87,7 @@ auto rotated_view(auto& tiles) {
 
 bool table_t::try_put_random_value() {
 	list tile_values {
-		array<storage<uint32*>, table_rows * table_rows>{}
+		array<uint32*, table_rows * table_rows>{}
 	};
 
 	for(nuint y = 0; y < table.tiles.size(); ++y) {

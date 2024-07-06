@@ -1,6 +1,7 @@
 #pragma once
 
 #include <posix/memory.hpp>
+#include <posix/abort.hpp>
 #include <posix/io.hpp>
 
 posix::memory<uint8> read_file(any_c_string auto path) {

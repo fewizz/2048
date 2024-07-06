@@ -18,7 +18,7 @@ void main() {
 
 	vec2 coord = vec2(abs(coord_snorm.x), abs(coord_snorm.y));
 
-	float r = 0.1;
+	float r = 0.5;
 
 	if(coord.x < 1.0 - r || coord.y < 1.0 - r) {
 		out_color = vec4(color, 1.0);

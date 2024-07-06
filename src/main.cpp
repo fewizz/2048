@@ -22,6 +22,7 @@
 #include <numbers.hpp>
 #include <list.hpp>
 
+
 static enum class game_state_t {
 	waiting_input, animating
 } game_state = game_state_t::waiting_input;
@@ -1236,7 +1237,7 @@ int main() {
 
 			list positions_list {
 				array<
-					storage<tile_position_and_size_t>,
+					tile_position_and_size_t,
 					table_rows * table_rows * 2
 				>{}
 			};
@@ -1261,7 +1262,7 @@ int main() {
 
 			list digits_and_letters_positions_list {
 				array<
-					storage<positions_and_letters_t>,
+					positions_and_letters_t,
 					65536 / sizeof(positions_and_letters_t)
 				>{}
 			};

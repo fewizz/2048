@@ -5,6 +5,8 @@
 
 #include <print/print.hpp>
 #include <glfw/instance.hpp>
+#include <posix/abort.hpp>
+
 
 template<typename Function>
 struct function_holder {
@@ -55,6 +57,7 @@ vk::get_instance_function_t<Function>::operator () (
 		print::err("couldn't find instance function", name);
 		posix::abort();
 	}
+
 	return function_holder<Function>::function_ptr;
 }
 
@@ -78,5 +81,6 @@ vk::get_device_function_t<Function>::operator () (
 		print::err("couldn't find device function", name);
 		posix::abort();
 	}
+
 	return function_holder<Function>::function_ptr;
 }
