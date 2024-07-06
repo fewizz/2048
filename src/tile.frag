@@ -12,7 +12,7 @@ void main() {
 		log2(value) / 11.0 + 0.5
 	);
 	
-	if(value == 0u) {
+	if (value == 0u) {
 		color = vec3(0.1);
 	}
 
@@ -20,7 +20,7 @@ void main() {
 
 	float r = 0.5;
 
-	if(coord.x < 1.0 - r || coord.y < 1.0 - r) {
+	if (coord.x < 1.0 - r || coord.y < 1.0 - r) {
 		out_color = vec4(color, 1.0);
 	}
 	else {

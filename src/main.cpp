@@ -23,27 +23,23 @@
 #include <list.hpp>
 
 
-static enum class game_state_t {
+static enum class game_state {
 	waiting_input, animating
-} game_state = game_state_t::waiting_input;
+} game_state = game_state::waiting_input;
 
-posix::seconds_and_nanoseconds animation_begin_time{};
+
+posix::ticks_t animation_begin_time{};
 static constexpr nuint animation_ms = 100;
 table_t prev_table{};
 movement_table_t movement_table;
 
 int main() {
-	{
-		auto [seconds, nanoseconds]
-			= posix::monolitic_clock.secods_and_nanoseconds();
-
-		posix::rand_seed(seconds + nanoseconds);
-	}
+	posix::rand_seed(posix::get_ticks());
 
 	table.try_put_random_value();
 	table.try_put_random_value();
 
-	if(!glfw_instance.is_vulkan_supported()) {
+	if (!glfw_instance.is_vulkan_supported()) {
 		print::err("vulkan isn't supported\n");
 		return 1;
 	}
@@ -55,11 +51,11 @@ int main() {
 			glfw::window*, glfw::key::code key, int,
 			glfw::key::action action, glfw::key::modifiers
 		) {
-			if(game_state != game_state_t::waiting_input) {
+			if (game_state != game_state::waiting_input) {
 				return;
 			}
 
-			if(action != glfw::key::action::press) return;
+			if (action != glfw::key::action::press) return;
 
 			optional<movement_table_t> possible_movement_table{};
 			prev_table = table;
@@ -79,13 +75,12 @@ int main() {
 					possible_movement_table = table.try_move<right>(); break;
 			}
 
-			if(possible_movement_table.has_value()) {
+			if (possible_movement_table.has_value()) {
 				movement_table = possible_movement_table.get();
 
 				table.try_put_random_value();
-				game_state = game_state_t::animating;
-				animation_begin_time
-					= posix::monolitic_clock.secods_and_nanoseconds();
+				game_state = game_state::animating;
+				animation_begin_time = posix::get_ticks();
 			}
 		}
 	);
@@ -98,16 +93,17 @@ int main() {
 				vk::extension_name { u8"VK_EXT_debug_utils" }
 			}
 		}.concat_view().view_copied_elements_on_stack(
-			[](span<vk::extension_name> extensions_names) {
+			[](span<vk::extension_name> extension_names) {
 				return vk::create_instance(
 					vk::application_info {
 						vk::api_version { vk::major { 1 }, vk::minor { 0 } }
 					},
-					extensions_names,
+					extension_names,
 					array{ vk::layer_name { u8"VK_LAYER_KHRONOS_validation" } }
 				);
 			}
 		);
+
 	on_scope_exit destroy_instance = [&] {
 		vk::destroy_instance(instance);
 		print::out("instance is destroyed\n");
@@ -129,8 +125,8 @@ int main() {
 				[[maybe_unused]] uint64 object,
 				[[maybe_unused]] nuint location,
 				[[maybe_unused]] int32 message_code,
-				[[maybe_unused]] c_string_of_unknown_size<utf8::unit> l_prefix,
-				c_string_of_unknown_size<utf8::unit> message,
+				[[maybe_unused]] c_string<utf8::unit> l_prefix,
+				c_string<utf8::unit> message,
 				[[maybe_unused]] void* user_data
 			) -> uint32 {
 				print::out("[vk] ", c_string { message }.sized(), "\n");
@@ -173,29 +169,26 @@ int main() {
 
 	print::out("surface format is selected\n");
 
-	vk::queue_family_index queue_family_index = vk::queue_family_ignored;
+	vk::queue_family_index queue_family_index =
+		vk::view_physical_device_queue_family_properties(
+			instance, physical_device,
+			[&](span<vk::queue_family_properties> props_span) {
+				for (auto [index, props] : props_span.indexed_view()) {
+					bool graphics = props.flags & vk::queue_flag::graphics;
+					bool supports_surface =
+						vk::get_physical_device_surface_support(
+							instance, physical_device,
+							surface,
+							vk::queue_family_index { (uint32) index }
+						);
 
-	vk::view_physical_device_queue_family_properties(
-		instance, physical_device,
-		[&](span<vk::queue_family_properties> props_span) {
-			props_span.for_each_indexed([&](auto props, uint32 index) {
-				bool graphics = props.flags & vk::queue_flag::graphics;
-				bool supports_surface =
-					vk::get_physical_device_surface_support(
-						instance, physical_device,
-						surface,
-						vk::queue_family_index { index }
-					);
-
-				if(graphics && supports_surface) {
-					queue_family_index = index;
-					return loop_action::stop;
-				}
-
-				return loop_action::next;
-			});
-		}
-	);
+					if (graphics && supports_surface) {
+						return vk::queue_family_index { (uint32) index };
+					}
+				};
+				return vk::queue_family_ignored;
+			}
+		);
 
 	print::out("queue family index is selected\n");
 
@@ -205,7 +198,6 @@ int main() {
 		instance, physical_device,
 		array { vk::queue_create_info {
 			queue_family_index,
-			vk::queue_count { 1 },
 			queue_priorities
 		}},
 		array { vk::extension_name { u8"VK_KHR_swapchain" } }
@@ -274,12 +266,10 @@ int main() {
 	print::out("memory for \"digits_and_letters.png\" is allocated\n");
 	
 	{
-		uint8* mem_ptr;
-		vk::map_memory(
+		uint8* mem_ptr = vk::map_memory(
 			instance, device,
 			digits_and_letters_memory,
-			digits_and_letters_memory_requirements.size,
-			mem_ptr
+			digits_and_letters_memory_requirements.size
 		);
 
 		digits_and_letters_image_data.bytes.as_span().copy_to(span {
@@ -616,7 +606,7 @@ int main() {
 		vk::alpha_blend_op { vk::blend_op::add }*/
 	};
 
-	auto dynamic_states = array {
+	array dynamic_states {
 		vk::dynamic_state::viewport, vk::dynamic_state::scissor
 	};
 
@@ -901,7 +891,7 @@ int main() {
 
 	handle<vk::swapchain> swapchain{};
 	on_scope_exit destroy_swapchain = [&] {
-		if(swapchain.is_valid()) {
+		if (swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, swapchain);
 		}
 		print::out("swapchain is destroyed\n");
@@ -909,22 +899,22 @@ int main() {
 
 	print::out.flush();
 
-	while(!window->should_close()) {
+	while (!window->should_close()) {
 		handle<vk::swapchain> prev_swapchain = swapchain;
 		auto window_size = window->get_size().cast<uint32>();
 
-		vk::surface_capabilities surface_caps =
-			vk::get_physical_device_surface_capabilities(
+		vk::surface_capabilities surface_caps
+			= vk::get_physical_device_surface_capabilities(
 				instance, physical_device, surface
 			);
 
 		vk::extent<2> extent = surface_caps.current_extent;
 
-		if(extent == 0u) { // on windows, window is minimised. TODO
+		if (extent == 0u) { // on windows, window is minimised. TODO
 			glfw_instance.poll_events();
 			continue;
 		}
-		if(extent == -1u) { // on linux, wayland
+		if (extent == -1u) { // on linux, wayland
 			extent = window_size;
 			extent = extent.clamp(
 				surface_caps.min_image_extent,
@@ -959,7 +949,7 @@ int main() {
 
 		print::out("swapchain is (re)created\n");
 
-		if(prev_swapchain.is_valid()) {
+		if (prev_swapchain.is_valid()) {
 			vk::destroy_swapchain(instance, device, prev_swapchain);
 		}
 
@@ -974,14 +964,14 @@ int main() {
 
 		handle<vk::image_view> image_views_raw[swapchain_images_count];
 		span image_views{ image_views_raw, swapchain_images_count };
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			image_views[i] = vk::create_image_view(
 				instance, device, swapchain_images[i],
 				surface_format.format, vk::image_view_type::two_d
 			);
 		}
 		on_scope_exit destroy_image_views = [&] {
-			for(handle<vk::image_view> image_view : image_views) {
+			for (handle<vk::image_view> image_view : image_views) {
 				vk::destroy_image_view(instance, device, image_view);
 			}
 			print::out("swapchain's image views are freed\n");
@@ -991,7 +981,7 @@ int main() {
 		handle<vk::image> depth_images_raw[swapchain_images_count];
 		span depth_images { depth_images_raw, swapchain_images_count };
 
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			depth_images[i] = vk::create_image(instance, device,
 				vk::image_type::two_d,
 				vk::format::d32_sfloat,
@@ -1001,7 +991,7 @@ int main() {
 			);
 		}
 		on_scope_exit destroy_depth_images { [&] {
-			for(handle<vk::image> depth_image : depth_images) {
+			for (handle<vk::image> depth_image : depth_images) {
 				vk::destroy_image(instance, device, depth_image);
 			}
 			print::out("depth images are destroyed\n");
@@ -1037,7 +1027,7 @@ int main() {
 		}};
 		print::out("memory for depth images is allocated\n");
 
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			vk::bind_image_memory(
 				instance, device, depth_images[i],
 				depth_images_memory,
@@ -1056,7 +1046,7 @@ int main() {
 			depth_image_views_raw, swapchain_images_count
 		};
 
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			depth_image_views[i] = vk::create_image_view(instance, device,
 				depth_images[i], vk::format::d32_sfloat,
 				vk::image_view_type::two_d,
@@ -1066,7 +1056,7 @@ int main() {
 			);
 		}
 		on_scope_exit destroy_depth_image_views { [&] {
-			for(handle<vk::image_view> depth_image_view : depth_image_views) {
+			for (handle<vk::image_view> depth_image_view : depth_image_views) {
 				vk::destroy_image_view(instance, device, depth_image_view);
 			}
 			print::out("depth image views are destroyed\n");
@@ -1075,7 +1065,7 @@ int main() {
 
 		handle<vk::framebuffer> framebuffers_raw[swapchain_images_count];
 		span framebuffers { framebuffers_raw, swapchain_images_count };
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			framebuffers[i] = vk::create_framebuffer(
 				instance, device, tile_render_pass,
 				array {
@@ -1086,7 +1076,7 @@ int main() {
 			);
 		}
 		on_scope_exit destroy_framebuffer = [&] {
-			for(handle<vk::framebuffer> framebuffer : framebuffers) {
+			for (handle<vk::framebuffer> framebuffer : framebuffers) {
 				vk::destroy_framebuffer(instance, device, framebuffer);
 			}
 			print::out("framebuffers are freed\n");
@@ -1112,11 +1102,11 @@ int main() {
 
 		handle<vk::fence> fences_raw[swapchain_images_count];
 		span fences{ fences_raw, swapchain_images_count };
-		for(nuint i = 0; i < swapchain_images_count; ++i) {
+		for (nuint i = 0; i < swapchain_images_count; ++i) {
 			fences[i] = vk::create_fence(instance, device);
 		}
 		on_scope_exit destroy_fences = [&] {
-			for(handle<vk::fence> fence : fences) {
+			for (handle<vk::fence> fence : fences) {
 				vk::destroy_fence(instance, device, fence);
 			}
 			print::out("fences are destroyed\n");
@@ -1158,27 +1148,24 @@ int main() {
 
 		print::out.flush();
 
-		while(!window->should_close()) {
+		while (!window->should_close()) {
 			glfw_instance.poll_events();
-			if(window->get_size().cast<uint32>() != window_size) {
+			if (window->get_size().cast<uint32>() != window_size) {
 				break;
 			}
 
 			float t = 1.0;
 
-			if(game_state == game_state_t::animating) {
-				auto[s, ns] = posix::monolitic_clock.secods_and_nanoseconds();
-				nuint diff =
-					(s - animation_begin_time.seconds) * 1000 +
-					(int64(ns) - int64(animation_begin_time.nanoseconds))
-						/ (1000 * 1000);
+			if (game_state == game_state::animating) {
+				auto new_time = posix::get_ticks();
+				nuint diff_ms = (new_time - animation_begin_time) * 1000 / posix::ticks_per_second;
 
-				if(diff > animation_ms) {
-					game_state = game_state_t::waiting_input;
+				if (diff_ms > animation_ms) {
+					game_state = game_state::waiting_input;
 					movement_table = movement_table_t{};
 				}
 				else {
-					t = float(diff) / float(animation_ms);
+					t = float(diff_ms) / float(animation_ms);
 				}
 			}
 
@@ -1188,12 +1175,12 @@ int main() {
 				);
 			
 			auto should_update_swapchain = [&](vk::result result) {
-				if(result.success()) return false;
-				if(result.suboptimal() || result.out_of_date()) return true;
+				if (result.success()) return false;
+				if (result.suboptimal() || result.out_of_date()) return true;
 				posix::abort();
 			};
 
-			if(
+			if (
 				acquire_result.is_unexpected() &&
 				should_update_swapchain(acquire_result.get_unexpected())
 			) {
@@ -1279,12 +1266,12 @@ int main() {
 			float tile_size = table_size / float(table_rows) / 1.1F;
 
 			auto& current_tiles =
-				game_state == game_state_t::animating ?
+				game_state == game_state::animating ?
 				prev_table.tiles :
 				table.tiles;
 
-			for(nuint y = 0; y < table_rows; ++y) {
-				for(nuint x = 0; x < table_rows; ++x) {
+			for (nuint y = 0; y < table_rows; ++y) {
+				for (nuint x = 0; x < table_rows; ++x) {
 					movement_t movement = movement_table.tiles[y][x];
 					direction_t movement_direction
 						= movement.get_same_as<direction_t>();
@@ -1316,7 +1303,7 @@ int main() {
 						0
 					);
 
-					if(current_tiles[y][x] == 0) continue;
+					if (current_tiles[y][x] == 0) continue;
 
 					positions_list.emplace_back(
 						math::vector<float, 3> {
@@ -1476,7 +1463,7 @@ int main() {
 				vk::wait_semaphore { submit_semaphore }
 			);
 
-			if(should_update_swapchain(present_result)) {
+			if (should_update_swapchain(present_result)) {
 				break;
 			}
 		}

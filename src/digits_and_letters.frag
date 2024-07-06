@@ -18,10 +18,10 @@ float get_letter_or_digit_opacity(vec2 pos) {
 void main() {
 	float r = 0.0;
 
-	if(ascii >= 48 && ascii <= 57) {
+	if (ascii >= 48 && ascii <= 57) {
 		r = get_letter_or_digit_opacity(vec2(ascii - 48, 0));
 	}
-	if(ascii >= 97 && ascii <= 122) {
+	if (ascii >= 97 && ascii <= 122) {
 		uint i = ascii - 97;
 		r = get_letter_or_digit_opacity(vec2(i % 10, 1 + i / 10));
 	}

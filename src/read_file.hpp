@@ -4,7 +4,7 @@
 #include <posix/abort.hpp>
 #include <posix/io.hpp>
 
-posix::memory<uint8> read_file(any_c_string auto path) {
+inline posix::memory<uint8> read_file(c_string<char> path) {
 	body<posix::file> file = posix::open_file(
 		path,
 		posix::file_access_modes {
@@ -18,6 +18,6 @@ posix::memory<uint8> read_file(any_c_string auto path) {
 	posix::memory<uint8> mem = posix::allocate<uint8>(size);
 
 	auto read = file->read_to(mem);
-	if(read != size) { posix::abort(); }
+	if (read != size) { posix::abort(); }
 	return mem;
 }

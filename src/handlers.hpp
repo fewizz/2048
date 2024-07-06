@@ -8,7 +8,7 @@ namespace vk {
 		posix::abort();
 	}
 
-	[[ noreturn ]] inline void unexpected_handler(vk::result) {
+	[[ noreturn ]] inline void unexpected_handler([[maybe_unused]] vk::result result) {
 		posix::abort();
 	}
 }

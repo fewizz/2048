@@ -90,16 +90,16 @@ bool table_t::try_put_random_value() {
 		array<uint32*, table_rows * table_rows>{}
 	};
 
-	for(nuint y = 0; y < table.tiles.size(); ++y) {
-		for(nuint x = 0; x < table.tiles[y].size(); ++x) {
+	for (nuint y = 0; y < table.tiles.size(); ++y) {
+		for (nuint x = 0; x < table.tiles[y].size(); ++x) {
 			uint32& value = table.tiles[y][x];
-			if(value == 0) {
+			if (value == 0) {
 				tile_values.emplace_back(&value);
 			}
 		}
 	}
 
-	if(tile_values.size() == 0) return false;
+	if (tile_values.size() == 0) return false;
 
 	nuint rand_index = posix::rand() % tile_values.size();
 	uint32 rand_value = (posix::rand() % 2 + 1) * 2;
@@ -116,17 +116,17 @@ optional<movement_table_t> table_t::try_move() {
 	movement_table_t movement_table{};
 	auto movements = rotated_view<Dir>(movement_table.tiles);
 
-	for(nuint x = 0; x < table_rows; ++x) {
+	for (nuint x = 0; x < table_rows; ++x) {
 		nuint min_replacable_y = 0;
-		for(nuint y = 1; y < table_rows; ++y) {
-			if(table[y][x] == 0) continue;
+		for (nuint y = 1; y < table_rows; ++y) {
+			if (table[y][x] == 0) continue;
 
 			nuint new_y = y;
 
 			nuint free_y = -1;
 
-			for(nuint offset = 1; offset <= y; ++offset) {
-				if(table[y - offset][x] == 0) {
+			for (nuint offset = 1; offset <= y; ++offset) {
+				if (table[y - offset][x] == 0) {
 					free_y = y - offset;
 				}
 				else {
@@ -134,13 +134,13 @@ optional<movement_table_t> table_t::try_move() {
 				}
 			}
 
-			if(free_y != nuint(-1)) {
+			if (free_y != nuint(-1)) {
 				new_y = free_y;
 				table[new_y][x] = table[y][x];
 				table[y][x] = 0;
 			}
 
-			if(
+			if (
 				new_y > min_replacable_y &&
 				table[new_y][x] == table[new_y - 1][x]
 			) {
@@ -150,18 +150,18 @@ optional<movement_table_t> table_t::try_move() {
 				--new_y;
 			}
 
-			if(new_y != y) {
+			if (new_y != y) {
 				moved = true;
 				movements[y][x] = { Dir, y - new_y };
 			}
 
 			/*nuint empty_y = -1;
 
-			for(nuint offset = 1; offset <= y; ++offset) {
-				if(table[y - offset][x] == 0) {
+			for (nuint offset = 1; offset <= y; ++offset) {
+				if (table[y - offset][x] == 0) {
 					empty_y = y - offset;
 				}
-				else if(table[y - offset][x] == table[y][x]) {
+				else if (table[y - offset][x] == table[y][x]) {
 					table[y - offset][x] *= 2;
 					table[y][x] = 0;
 					movements[y][x] = { Dir, offset };
@@ -173,7 +173,7 @@ optional<movement_table_t> table_t::try_move() {
 				}
 			}
 
-			if(empty_y != nuint(-1)) {
+			if (empty_y != nuint(-1)) {
 				table[empty_y][x] = table[y][x];
 				table[y][x] = 0;
 				movements[y][x] = { Dir, y - empty_y };
@@ -182,7 +182,7 @@ optional<movement_table_t> table_t::try_move() {
 		}
 	};
 
-	if(!moved) {
+	if (!moved) {
 		return {};
 	}
 

@@ -22,14 +22,14 @@ vk::get_global_function_t<Function>::operator () () const {
 	using prototype = typename Function::prototype;
 	const char* name = Function::name;
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		function_holder<Function>::function_ptr = 
 			(prototype) glfw_instance.get_global_proc_address(
 				c_string { name }
 			);
 	}
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		print::err("couldn't find global function", name);
 		posix::abort();
 	}
@@ -45,7 +45,7 @@ vk::get_instance_function_t<Function>::operator () (
 	using prototype = typename Function::prototype;
 	const char* name = Function::name;
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		function_holder<Function>::function_ptr = 
 			(prototype) glfw_instance.get_instance_proc_address(
 				instance,
@@ -53,7 +53,7 @@ vk::get_instance_function_t<Function>::operator () (
 			);
 	}
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		print::err("couldn't find instance function", name);
 		posix::abort();
 	}
@@ -70,14 +70,14 @@ vk::get_device_function_t<Function>::operator () (
 	using prototype = typename Function::prototype;
 	const char* name = Function::name;
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		function_holder<Function>::function_ptr = 
 			(prototype) vk::get_device_proc_address(
 				instance, device, c_string { name }
 			);
 	}
 
-	if(function_holder<Function>::function_ptr == nullptr) {
+	if (function_holder<Function>::function_ptr == nullptr) {
 		print::err("couldn't find device function", name);
 		posix::abort();
 	}

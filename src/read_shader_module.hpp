@@ -3,10 +3,10 @@
 #include "./read_file.hpp"
 #include <vk.hpp>
 
-handle<vk::shader_module> read_shader_module(
+inline handle<vk::shader_module> read_shader_module(
 	handle<vk::instance> instance,
 	handle<vk::device> device,
-	any_c_string auto path
+	c_string<char> path
 ) {
 	posix::memory<uint8> data = read_file(path);
 
