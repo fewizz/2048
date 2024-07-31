@@ -196,8 +196,7 @@ int main() {
 	);
 	vk::debug_utils::set_object_name(
 		instance, device,
-		device,
-		vk::debug_utils::object_name { u8"device" }
+		device, vk::debug_utils::object_name { u8"device"s }
 	);
 	on_scope_exit destroy_device = [&] {
 		vk::destroy_device(instance, device);
@@ -230,7 +229,7 @@ int main() {
 	print::out("\"digits_and_letters.png\" image is created\n");
 
 	vk::memory_requirements digits_and_letters_memory_requirements
-		= vk::get_image_memory_requirements(
+		= vk::get_memory_requirements(
 			instance, device, digits_and_letters_image
 		);
 
@@ -246,7 +245,7 @@ int main() {
 
 	handle<vk::device_memory> digits_and_letters_memory = vk::allocate_memory(
 		instance, device,
-		vk::memory_size { digits_and_letters_memory_requirements.size },
+		digits_and_letters_memory_requirements.size,
 		digits_and_letters_memory_type_index
 	);
 	on_scope_exit destroy_digits_and_letters_memory = [&] {
@@ -345,10 +344,7 @@ int main() {
 			array { vk::descriptor_set_layout_binding {
 				vk::descriptor_binding { 0 },
 				vk::descriptor_type::uniform_buffer,
-				vk::descriptor_count { 1 },
-				vk::shader_stages {
-					vk::shader_stage::vertex
-				}
+				vk::shader_stage::vertex
 			}}
 		);
 
@@ -367,18 +363,12 @@ int main() {
 				vk::descriptor_set_layout_binding {
 					vk::descriptor_binding { 0 },
 					vk::descriptor_type::uniform_buffer,
-					vk::descriptor_count { 1 },
-					vk::shader_stages {
-						vk::shader_stage::vertex
-					}
+					vk::shader_stage::vertex
 				},
 				vk::descriptor_set_layout_binding {
 					vk::descriptor_binding { 1 },
 					vk::descriptor_type::combined_image_sampler,
-					vk::descriptor_count { 1 },
-					vk::shader_stages {
-						vk::shader_stage::fragment
-					}
+					vk::shader_stage::fragment
 				}
 			}
 		);
@@ -408,15 +398,13 @@ int main() {
 
 	array depth_attachment_references {
 		vk::depth_stencil_attachment_reference {
-			0,
-			vk::image_layout::depth_stencil_attachment_optimal
+			0, vk::image_layout::depth_stencil_attachment_optimal
 		}
 	};
 
 	array color_attachment_references {
 		vk::color_attachment_reference {
-			1,
-			vk::image_layout::color_attachment_optimal
+			1, vk::image_layout::color_attachment_optimal
 		}
 	};
 
@@ -450,7 +438,7 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		tile_render_pass,
-		vk::debug_utils::object_name { u8"\"tile\" render pass" }
+		vk::debug_utils::object_name { u8"\"tile\" render pass"s }
 	);
 	on_scope_exit destroy_tile_render_pass = [&] {
 		vk::destroy_render_pass(instance, device, tile_render_pass);
@@ -493,7 +481,7 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		digits_and_letters_render_pass,
-		vk::debug_utils::object_name { u8"\"digits and letters\" render pass" }
+		vk::debug_utils::object_name { u8"\"digits and letters\" render pass"s }
 	);
 	on_scope_exit destroy_digits_and_letters_render_pass = [&] {
 		vk::destroy_render_pass(
@@ -552,9 +540,7 @@ int main() {
 			array { tile_descriptor_set_layout },
 			array {
 				vk::push_constant_range {
-					vk::shader_stages {
-						vk::shader_stage::vertex
-					},
+					vk::shader_stage::vertex,
 					vk::size { 2 * sizeof(uint32) }
 				}
 			}
@@ -571,9 +557,7 @@ int main() {
 			array { digits_and_letters_descriptor_set_layout },
 			array {
 				vk::push_constant_range {
-					vk::shader_stages {
-						vk::shader_stage::vertex
-					},
+					vk::shader_stage::vertex,
 					vk::size { 2 * sizeof(uint32) }
 				}
 			}
@@ -600,12 +584,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				tile_vert_shader_module,
-				vk::entrypoint_name { u8"main" }
+				vk::entrypoint_name { u8"main"s }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				tile_frag_shader_module,
-				vk::entrypoint_name { u8"main" }
+				vk::entrypoint_name { u8"main"s }
 			}
 		},
 		vk::pipeline_depth_stencil_state_create_info {
@@ -656,12 +640,12 @@ int main() {
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::vertex,
 				digits_and_letters_vert_shader_module,
-				vk::entrypoint_name { u8"main" }
+				vk::entrypoint_name { u8"main"s }
 			},
 			vk::pipeline_shader_stage_create_info {
 				vk::shader_stage::fragment,
 				digits_and_letters_frag_shader_module,
-				vk::entrypoint_name { u8"main" }
+				vk::entrypoint_name { u8"main"s }
 			}
 		},
 		vk::pipeline_depth_stencil_state_create_info {
@@ -760,7 +744,7 @@ int main() {
 	vk::debug_utils::set_object_name(
 		instance, device,
 		tile_uniform_buffer,
-		vk::debug_utils::object_name { u8"\"tile\" uniform buffer" }
+		vk::debug_utils::object_name { u8"\"tile\" uniform buffer"s }
 	);
 	on_scope_exit destroy_tile_uniform_buffer = [&] {
 		vk::destroy_buffer(instance, device, tile_uniform_buffer);
@@ -794,7 +778,7 @@ int main() {
 		instance, device,
 		digits_and_letters_uniform_buffer,
 		vk::debug_utils::object_name {
-			u8"\"digits and letters\" uniform buffer"
+			u8"\"digits and letters\" uniform buffer"s
 		}
 	);
 	on_scope_exit destroy_digits_and_letters_uniform_buffer = [&] {
@@ -884,6 +868,7 @@ int main() {
 		tile_pipeline_layout, tile_uniform_buffer, tile_descriptor_set,
 		
 		digits_and_letters_render_pass, digits_and_letters_pipeline,
-		digits_and_letters_pipeline_layout, digits_and_letters_uniform_buffer, digits_and_letters_descriptor_set
+		digits_and_letters_pipeline_layout, digits_and_letters_uniform_buffer,
+		digits_and_letters_descriptor_set
 	);
 }

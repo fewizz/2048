@@ -153,7 +153,7 @@ inline void frame(
 		print::out("depth images are created\n");
 
 		vk::memory_requirements depth_image_memory_requirements
-			= vk::get_image_memory_requirements(
+			= vk::get_memory_requirements(
 				instance, device, depth_images[0]
 			);
 
@@ -418,8 +418,8 @@ inline void frame(
 				for (nuint x = 0; x < table_rows; ++x) {
 					movement_t movement = movement_table.tiles[y][x];
 					direction_t movement_direction
-						= movement.get_same_as<direction_t>();
-					nuint movement_distance = movement.get_same_as<nuint>();
+						= movement.get<is_same_as<direction_t>>();
+					nuint movement_distance = movement.get<is_same_as<nuint>>();
 
 					math::vector p0
 						= math::vector { float(x), float(y) };
