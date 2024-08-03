@@ -722,11 +722,11 @@ int main() {
 			vk::src_stages { vk::pipeline_stage::all_commands },
 			vk::dst_stages { vk::pipeline_stage::all_commands },
 			array{ vk::image_memory_barrier {
-				.src_access = { vk::access::host_write },
-				.dst_access = { vk::access::shader_read },
-				.old_layout = { vk::image_layout::preinitialized },
-				.new_layout = { vk::image_layout::shader_read_only_optimal },
-				.image = digits_and_letters_image.underlying()
+				vk::src_access { vk::access::host_write },
+				vk::dst_access { vk::access::shader_read },
+				vk::old_layout { vk::image_layout::preinitialized },
+				vk::new_layout { vk::image_layout::shader_read_only_optimal },
+				digits_and_letters_image
 			}}
 		);
 		vk::end_command_buffer(instance, device, change_layout_command_buffer);

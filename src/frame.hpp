@@ -99,7 +99,7 @@ inline void frame(
 			vk::clipped { true },
 			vk::surface_transform::identity,
 			vk::composite_alpha::opaque,
-			swapchain
+			vk::old_swapchain{ swapchain }
 		);
 
 		print::out("swapchain is (re)created\n");
@@ -117,16 +117,19 @@ inline void frame(
 
 		print::out("swapchain images received\n");
 
-		handle<vk::image_view> image_views_raw[swapchain_images_count];
-		span image_views{ image_views_raw, swapchain_images_count };
-		for (nuint i = 0; i < swapchain_images_count; ++i) {
-			image_views[i] = vk::create_image_view(
+		handle<vk::image_view> swapchain_image_views_raw[swapchain_images_count];
+		span swapchain_image_views{
+			swapchain_image_views_raw,
+			swapchain_images_count
+		};
+		for (auto [i, v] : swapchain_image_views.indexed_view()) {
+			v = vk::create_image_view(
 				instance, device, swapchain_images[i],
 				surface_format.format, vk::image_view_type::two_d
 			);
 		}
 		on_scope_exit destroy_image_views = [&] {
-			for (handle<vk::image_view> image_view : image_views) {
+			for (auto& image_view : swapchain_image_views) {
 				vk::destroy_image_view(instance, device, image_view);
 			}
 			print::out("swapchain's image views are freed\n");
@@ -136,8 +139,8 @@ inline void frame(
 		handle<vk::image> depth_images_raw[swapchain_images_count];
 		span depth_images { depth_images_raw, swapchain_images_count };
 
-		for (nuint i = 0; i < swapchain_images_count; ++i) {
-			depth_images[i] = vk::create_image(instance, device,
+		for (auto& depth_image : depth_images) {
+			depth_image = vk::create_image(instance, device,
 				vk::format::d32_sfloat,
 				extent,
 				vk::image_tiling::optimal,
@@ -200,8 +203,9 @@ inline void frame(
 			depth_image_views_raw, swapchain_images_count
 		};
 
-		for (nuint i = 0; i < swapchain_images_count; ++i) {
-			depth_image_views[i] = vk::create_image_view(instance, device,
+		for (auto [i, v] : depth_image_views.indexed_view()) {
+			v = vk::create_image_view(
+				instance, device,
 				depth_images[i], vk::format::d32_sfloat,
 				vk::image_view_type::two_d,
 				vk::image_subresource_range {
@@ -219,18 +223,18 @@ inline void frame(
 
 		handle<vk::framebuffer> framebuffers_raw[swapchain_images_count];
 		span framebuffers { framebuffers_raw, swapchain_images_count };
-		for (nuint i = 0; i < swapchain_images_count; ++i) {
-			framebuffers[i] = vk::create_framebuffer(
+		for (auto [i, framebuffer] : framebuffers.indexed_view()) {
+			framebuffer = vk::create_framebuffer(
 				instance, device, tile_render_pass,
 				array {
 					depth_image_views[i],
-					image_views[i]
+					swapchain_image_views[i]
 				},
 				vk::extent<3> { extent, 1 }
 			);
 		}
 		on_scope_exit destroy_framebuffer = [&] {
-			for (handle<vk::framebuffer> framebuffer : framebuffers) {
+			for (auto framebuffer : framebuffers) {
 				vk::destroy_framebuffer(instance, device, framebuffer);
 			}
 			print::out("framebuffers are freed\n");
@@ -260,7 +264,7 @@ inline void frame(
 			fences[i] = vk::create_fence(instance, device);
 		}
 		on_scope_exit destroy_fences = [&] {
-			for (handle<vk::fence> fence : fences) {
+			for (auto fence : fences) {
 				vk::destroy_fence(instance, device, fence);
 			}
 			print::out("fences are destroyed\n");
