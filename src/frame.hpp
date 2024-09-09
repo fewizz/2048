@@ -166,7 +166,7 @@ inline void frame(
 				number {
 					(uint64) depth_image_memory_requirements.size
 				}.align(
-					depth_image_memory_requirements.alignment
+					(uint64) depth_image_memory_requirements.alignment
 				) * swapchain_images_count
 			},
 			vk::find_first_memory_type_index(
@@ -192,7 +192,7 @@ inline void frame(
 					i * number {
 						(uint64) depth_image_memory_requirements.size
 					}.align(
-						depth_image_memory_requirements.alignment
+						(uint64) depth_image_memory_requirements.alignment
 					)
 				}
 			);
